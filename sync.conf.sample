@@ -1,0 +1,36 @@
+# sample media sync config
+
+[dirs]
+# local base dir of the media (under which is projectype/langcode/hash/hash...)
+mediadir=
+# local base dir of archive for deleted images, tarballs NOT VISIBLE ON WEB
+archivedir=
+# directory where we put all these lists
+listsdir=
+
+[urls]
+# remote url for getting active project list via mediawiki api
+sitematrix_url=https://meta.wikimedia.org/w/api.php?action=sitematrix&format=json
+# base remote url for getting media uploaded/foreignrepo file lists
+# https://upload.wikimedia.org/projecttype/langcode/hash/dir/filename
+foreignrepo_media_url=https://upload.wikimedia.org/
+# base remote url for getting new project-uploaded images
+# https://upload.wikimedia.org/wikipedia/commons/hash/dir/filename
+uploaded_media_url=https://upload.wikimedia.org/wikipedia/commons/
+
+[limits]
+# time to wait between media download requests via the web
+http_wait=5
+# number of times to retry a failed media download
+http_retries=5
+# max number of project-uploaded media to download in one run (per project)
+max_uploaded_gets=50000
+# max number of foreignrepo media to download in one run (per project)
+max_foreignrepo_gets=50000
+
+[misc]
+# foreign repo name
+foreignrepo=commonswiki
+# user agent string for making all those requests!
+# see: https://meta.wikimedia.org/wiki/User-Agent_policy
+agent=
