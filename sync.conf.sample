@@ -9,8 +9,8 @@ archivedir=
 listsdir=
 
 [urls]
-# remote url for getting active project list via mediawiki api
-sitematrix_url=https://meta.wikimedia.org/w/api.php?action=sitematrix&format=json
+# remote url for mediawiki api requests
+api_url=https://meta.wikimedia.org/w/api.php
 # base remote url for getting media uploaded/foreignrepo file lists
 # https://upload.wikimedia.org/projecttype/langcode/hash/dir/filename
 foreignrepo_media_url=https://upload.wikimedia.org/

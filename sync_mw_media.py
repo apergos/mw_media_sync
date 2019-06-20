@@ -1,17 +1,21 @@
 #!/usr/bin/python3
 import configparser
 import getopt
+import json
 import os
 import urllib
 import sys
+import time
+import requests
 from sync.sync import Sync
 
 
 CONFIG_SECTIONS = {'dirs': ['mediadir', 'archivedir', 'listsdir'],
-                   'urls': ['sitematrix_url, foreignrepo_media_url', 'uploaded_media_url'],
+                   'urls': ['api_url', 'foreignrepo_media_url', 'uploaded_media_url'],
                    'limits': ['http_wait', 'http_retries', 'max_uploaded_gets',
                               'max_foreignrepo_gets'],
                    'misc': ['foreignrepo', 'agent']}
+
 
 def usage(message=None):
     '''
@@ -20,7 +24,7 @@ def usage(message=None):
     '''
     if message:
         sys.stderr.write("%s\n" % message)
-    usage_message = """Usage: $0 --configfile <path> [--retries] [--wait] [--verbose]
+    usage_message = """Usage: $0 --configfile <path> [--retries <num>] [--wait <num>] [--verbose]
 or: $0 --help
 
 This script retrieves information about media files uploaded or in use on a group of wikis,
@@ -35,6 +39,7 @@ Arguments:
                          value in the config file
     --wait       (-w)    the number of seconds to wait between downloads; if set here,
                          this will override any value in the config file
+    --verbose    (-v)    display various progress messages as the script runs
 """
     sys.stderr.write(usage_message)
     sys.exit(1)
@@ -86,10 +91,14 @@ def check_missing_args(args):
 def validate_args(args):
     '''validate arguments, whine about values
     as needed'''
-    if args['retries'] and not args['retries'].isdigit():
-        usage('--retries argument must be a positive integer')
-    if args['wait'] and not args['wait'].isdigit():
-        usage('--wait argument must be a positive integer')
+    if args['retries']:
+        if not args['retries'].isdigit():
+            usage('--retries argument must be a positive integer')
+        args['retries'] = int(args['retries'])
+    if args['wait']:
+        if not args['wait'].isdigit():
+            usage('--wait argument must be a positive integer')
+        args['wait'] = int(args['wait'])
 
 
 def get_args():
@@ -160,7 +169,52 @@ def get_active_projects(config):
     '''get list of active projects from remote MediaWiki
     via the api, convert it to list of entries with format
     projecttype/langcode and return it'''
+
+    baseurl = (config['api_url'])
+    params = {'action': 'sitematrix', 'format': 'json'}
+    sess = requests.Session()
+    sess.headers.update(
+        {"User-Agent": config['agent'], "Accept": "application/json"})
+
+    retried = 0
+    done = False
+    while not done and retried < config['http_retries']:
+        response = sess.get(baseurl, params=params, timeout=5)
+        if response.status_code == 200:
+            done = True
+        else:
+            retried += 1
+            time.sleep(config['http_wait'])
+    if not done:
+        sys.stderr.write('Failed to retrieve list of active projects ' +
+                         '(response code: {code}\n'.format(code=response.status_code))
+        response.raise_for_status()
+
+    siteinfo = json.loads(response.content)
     active_projects = []
+    for sitegroup in siteinfo['sitematrix']:
+        if sitegroup == 'specials':
+            for site in siteinfo['sitematrix'][sitegroup]:
+                active_projects.append(site['dbname'])
+            continue
+
+        # there is a 'count' entry which doesn't have site info. might be others too.
+        try:
+            if 'site' in siteinfo['sitematrix'][sitegroup]:
+                # sitegroup is 266:
+                # '266': {'code': 'tk', 'name': 'Türkmençe', 'site':
+                # [{'url': 'https://tk.wikipedia.org', 'dbname': 'tkwiki',
+                #   'code': 'wiki', 'sitename': 'Wikipediýa'},
+                #  {'url': 'https://tk.wiktionary.org', 'dbname': 'tkwiktionary',
+                #   'code': 'wiktionary', 'sitename': 'Wikisözlük'},
+                #  {'url': 'https://tk.wikibooks.org', 'dbname': 'tkwikibooks',
+                #   'code': 'wikibooks', 'sitename': 'Wikibooks', 'closed': ''},
+                #  {'url': 'https://tk.wikiquote.org', 'dbname': 'tkwikiquote',
+                #   'code': 'wikiquote', 'sitename': 'Wikiquote', 'closed': ''}]
+                for site in siteinfo['sitematrix'][sitegroup]['site']:
+                    active_projects.append(site['dbname'])
+        except TypeError:
+            continue
     return active_projects
 
 
@@ -169,7 +223,9 @@ def exclude_foreign_repo(config, active_projects):
     projects. We won't mirror all that content!
     For Wikimedia project mirroring, the foreign repo
     would be commons.wikimedia.org (commonswiki).'''
-    return []
+    if config['foreignrepo']:
+        if config['foreignrepo'] in active_projects:
+            active_projects.remove(config['foreignrepo'])
 
 
 def do_main():
@@ -178,8 +234,12 @@ def do_main():
     config = get_config(args['configfile'])
     validate_config(config)
     merge_config(config, args)
+
     active_projects = get_active_projects(config)
-    active_projects = exclude_foreign_repo(config, active_projects)
+    exclude_foreign_repo(config, active_projects)
+    if args['verbose']:
+        print("active projects are:", ",".join(active_projects))
+
     syncer = Sync(config, active_projects)
     syncer.init_local_mediadirs()
     syncer.archive_inactive_projects()
