@@ -24,7 +24,8 @@ def usage(message=None):
     '''
     if message:
         sys.stderr.write("%s\n" % message)
-    usage_message = """Usage: $0 --configfile <path> [--retries <num>] [--wait <num>] [--verbose]
+    usage_message = """Usage: $0 --configfile <path> [--projects] [--retries <num>] [--wait <num>]
+          [--verbose]
 or: $0 --help
 
 This script retrieves information about media files uploaded or in use on a group of wikis,
@@ -34,6 +35,8 @@ that aren't used remotely, and downloads remote files that don't exist locally.
 Arguments:
     --configfile (-c)    path to the configuration file with information about the
                          remote wikis, the local media directory tree, and so on
+    --projects   (-p)    comma-separated list of projects to sync from, otherwise
+                         all active remote projects will be synced from
     --retries    (-r)    the number of times to attempt to download a file before giving
                          up, in case of failure; if set here, this will override any
                          value in the config file
@@ -51,12 +54,13 @@ def parse_args():
     args = {'verbose': False,
             'help': False,
             'configfile': None,
+            'projects_todo': None,
             'retries': None,
             'wait': None}
     try:
         (options, remainder) = getopt.gnu_getopt(
-            sys.argv[1:], "c:r:w:vh", ["configfile=", "retries=", "wait=",
-                                       "verbose", "help"])
+            sys.argv[1:], "c:p:r:w:vh", ["configfile=", "retries=", "wait=",
+                                         "projects=", "verbose", "help"])
 
     except getopt.GetoptError as err:
         usage("Unknown option specified: " + str(err))
@@ -64,6 +68,8 @@ def parse_args():
     for (opt, val) in options:
         if opt in ["-c", "--configfile"]:
             args['configfile'] = val
+        elif opt in ["-p", "--projects"]:
+            args['projects_todo'] = val.split(',')
         elif opt in ["-r", "--retries"]:
             args['retries'] = val
         elif opt in ["-w", "--wait"]:
@@ -240,7 +246,7 @@ def do_main():
     if args['verbose']:
         print("active projects are:", ",".join(active_projects))
 
-    syncer = Sync(config, active_projects)
+    syncer = Sync(config, active_projects, args['projects_todo'])
     syncer.init_local_mediadirs()
     syncer.archive_inactive_projects()
     syncer.get_local_media_lists()

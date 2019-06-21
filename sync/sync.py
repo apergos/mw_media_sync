@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import os
 
 
 class GetWebFile():
@@ -32,14 +33,40 @@ class Sync():
     '''methods for syncing media from a remote MediaWiki
     instance or instances, to a local server'''
 
-    def __init__(self, config, active_projects):
+    def __init__(self, config, active_projects, projects_todo):
+        '''
+        configparser instance,
+        list of active projects,
+        list of projects to actually operate on
+        '''
         self.config = config
         self.active_projects = active_projects
+        self.projects_todo = None
+        if projects_todo:
+            self.projects_todo = [project for project in projects_todo
+                                  if project in active_projects]
 
     def init_local_mediadirs(self):
         '''if there is no local basedir for media, or if
         any active project dir underneath it does not exist,
         create it and the associated hashdirs'''
+
+        basedir = self.config['mediadir']
+        if not os.path.exists(basedir):
+            os.makedirs(basedir)
+        projects_todo = self.active_projects
+        if self.projects_todo:
+            projects_todo = self.projects_todo
+
+        for project in projects_todo:
+            # all the hashdirs
+            hexdigits = '0123456789abcdef'
+            hexdigits_split = list(hexdigits)
+            for first_digit in hexdigits_split:
+                for ending in hexdigits_split:
+                    subdir = os.path.join(basedir, project, first_digit, first_digit + ending)
+                    if not os.path.exists(subdir):
+                        os.makedirs(subdir)
         return
 
     def archive_inactive_projects(self):
