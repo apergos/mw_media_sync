@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import os
+import gzip
 import shutil
 import time
 
@@ -38,7 +39,7 @@ class Sync():
     def __init__(self, config, active_projects, projects_todo):
         '''
         configparser instance,
-        list of active projects,
+        dict of active projects,
         list of projects to actually operate on
         '''
         self.config = config
@@ -56,7 +57,7 @@ class Sync():
         basedir = self.config['mediadir']
         if not os.path.exists(basedir):
             os.makedirs(basedir)
-        projects_todo = self.active_projects
+        projects_todo = self.active_projects.keys()
         if self.projects_todo:
             projects_todo = self.projects_todo
 
@@ -120,13 +121,53 @@ class Sync():
             if project not in self.active_projects and not self.project_is_empty(project):
                 self.archive_project(project)
 
-    def get_local_media_lists(self):
-        '''write a list of all media for the local project,
+    def iterate_local_mediafiles_for_project(self, project):
+        '''return an iterator which will return the full path of each local media file
+        for the specified project, in turn'''
+        # FIXME use this, oh well
+        # (project_type, lang_code) = self.get_project_type_lcode(project)
+        basedir = os.path.join(self.config['mediadir'], project)
+        for dirpath, dirnames, filenames in os.walk(basedir):
+            for mediafile in filenames:
+                yield os.path.join(dirpath, mediafile)
+
+    def get_project_type_lcode(self, project):
+        '''given a project name return the project type and the
+        so-called language code, as in the examples below:
+        enwiki -> wikipedia, en
+        commonswiki -> wikipedia, commons'''
+        return (self.active_projects['projecttype'], self.active_projects['langcode'])
+
+    def record_local_media_for_project(self, project, date):
+        '''write a list of all media for each local project,
         with path: basename, project name, hashdir and ctime
         so each entry will look like:
-        01_Me_and_My_Microphone.ogg YYYYMMDDHHMMSS images/wikipedia/en/a/a6/
-        these files will live in filelists/date/projectname/projectname_local_media.gz'''
-        return
+        01_Me_and_My_Microphone.ogg YYYYMMDDHHMMSS <mediadir>/wikipedia/en/a/a6/
+        this file will live in <listsdir>/date/<project>/<project>_local_media.gz'''
+        basedir = os.path.join(self.config['listsdir'], date, project)
+        if not os.path.exists(basedir):
+            os.makedirs(basedir)
+        # if it's already there, what does that mean for us? we'll overwrite the
+        # existing list. too bad. maybe we're redoing a bad run or something.
+        mediafiles = self.iterate_local_mediafiles_for_project(project)
+        outputpath = os.path.join(basedir, project + '_local_media.gz')
+        with gzip.open(outputpath, "wb") as output:
+            for path in mediafiles:
+                dirname, filename = os.path.split(path)
+                # yep we get to stat them all. groan
+                mtime = os.stat(path).st_mtime
+                timestamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(mtime))
+                output.write('{filename} {timestamp} {dirname}\n'.format(
+                    filename=filename, timestamp=timestamp, dirname=dirname))
+
+    def get_local_media_lists(self):
+        '''write a list of all media for each local project'''
+        if not os.path.exists(self.config['listsdir']):
+            os.makedirs(self.config['listsdir'])
+        today = time.strftime("%Y%m%d", time.gmtime())
+        local_projects = self.get_local_projects()
+        for project in local_projects:
+            self.record_local_media_for_project(project, today)
 
     def sort_local_media_lists(self):
         '''read and sort the local media lists'''

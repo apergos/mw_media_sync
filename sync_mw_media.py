@@ -171,10 +171,16 @@ def merge_config(config, args):
         config['http_wait'] = args['retries']
 
 
+def get_projecttype_from_url(url):
+    '''give an url blah.wikisomething.org, dig the wikisomething
+    piece out and return it. yes it stinks.'''
+    return url.rsplit('.', 2)[0]
+
+
 def get_active_projects(config):
     '''get list of active projects from remote MediaWiki
-    via the api, convert it to list of entries with format
-    projecttype/langcode and return it'''
+    via the api, convert it to a dict of entries with key the dbname
+    and containing projecttype, langcode for each wiki, and return it'''
 
     baseurl = (config['api_url'])
     params = {'action': 'sitematrix', 'format': 'json'}
@@ -197,11 +203,13 @@ def get_active_projects(config):
         response.raise_for_status()
 
     siteinfo = json.loads(response.content)
-    active_projects = []
+    active_projects = {}
     for sitegroup in siteinfo['sitematrix']:
         if sitegroup == 'specials':
             for site in siteinfo['sitematrix'][sitegroup]:
-                active_projects.append(site['dbname'])
+                active_projects[site['dbname']] = {
+                    'projecttype': get_projecttype_from_url(site['url']),
+                    'langcode': site['code']}
             continue
 
         # there is a 'count' entry which doesn't have site info. might be others too.
@@ -218,7 +226,9 @@ def get_active_projects(config):
                 #  {'url': 'https://tk.wikiquote.org', 'dbname': 'tkwikiquote',
                 #   'code': 'wikiquote', 'sitename': 'Wikiquote', 'closed': ''}]
                 for site in siteinfo['sitematrix'][sitegroup]['site']:
-                    active_projects.append(site['dbname'])
+                    active_projects[site['dbname']] = {
+                        'projecttype': get_projecttype_from_url(site['url']),
+                        'langcode': siteinfo['sitematrix'][sitegroup]['code']}
         except TypeError:
             continue
     return active_projects
@@ -231,7 +241,7 @@ def exclude_foreign_repo(config, active_projects):
     would be commons.wikimedia.org (commonswiki).'''
     if config['foreignrepo']:
         if config['foreignrepo'] in active_projects:
-            active_projects.remove(config['foreignrepo'])
+            active_projects.pop(config['foreignrepo'], None)
 
 
 def do_main():
@@ -244,7 +254,7 @@ def do_main():
     active_projects = get_active_projects(config)
     exclude_foreign_repo(config, active_projects)
     if args['verbose']:
-        print("active projects are:", ",".join(active_projects))
+        print("active projects are:", ",".join(active_projects.keys()))
 
     syncer = Sync(config, active_projects, args['projects_todo'])
     syncer.init_local_mediadirs()
