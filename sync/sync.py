@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 import os
+import shutil
+import time
 
 
 class GetWebFile():
@@ -67,7 +69,45 @@ class Sync():
                     subdir = os.path.join(basedir, project, first_digit, first_digit + ending)
                     if not os.path.exists(subdir):
                         os.makedirs(subdir)
-        return
+
+    def get_local_projects(self):
+        '''return list of locally synced projects'''
+        return os.listdir(self.config['mediadir'])
+
+    def archive_project(self, project):
+        '''move the project subdir into the archive area,
+        adding the current date and time onto the project name'''
+        if not os.path.exists(self.config['archivedir']):
+            os.makedirs(self.config['archivedir'])
+
+        now = time.strftime("%Y%m%d%H%M%S", time.gmtime())
+        # yes this is only good down to the nearest second.
+        # we shouldn't be trying to archive multiple copies
+        # of a project in the same second anyways
+        newname = project + '.' + now
+
+        # very possible that archive area will be on a different filesystem
+        # from the (probably web-accessible) media sync, don't take any chances
+        shutil.move(os.path.join(self.config['mediadir'], project),
+                    os.path.join(self.config['archivedir'], newname))
+
+    def dir_is_empty(self, dirname):
+        '''return True if directory has no contents'''
+        return not bool(len(os.listdir(os.path.join(self.config['mediadir'], dirname))))
+
+    def project_is_empty(self, project):
+        '''return True if the specified project has no media
+        stored locally'''
+        basedir = self.config['mediadir']
+        hexdigits = '0123456789abcdef'
+        hexdigits_split = list(hexdigits)
+        for first_digit in hexdigits_split:
+            for ending in hexdigits_split:
+                subdir = os.path.join(basedir, project, first_digit, first_digit + ending)
+                if os.path.exists(subdir):
+                    if not self.dir_is_empty(subdir):
+                        return False
+        return True
 
     def archive_inactive_projects(self):
         '''if a local directory references a project that
@@ -76,6 +116,9 @@ class Sync():
         tar up the media and move it to the directory
         archive/inactive/projectname-date-media.tar.gz
         return'''
+        for project in self.get_local_projects():
+            if project not in self.active_projects and not self.project_is_empty(project):
+                self.archive_project(project)
 
     def get_local_media_lists(self):
         '''write a list of all media for the local project,
