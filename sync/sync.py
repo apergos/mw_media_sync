@@ -149,16 +149,15 @@ class Sync():
             os.makedirs(basedir)
         # if it's already there, what does that mean for us? we'll overwrite the
         # existing list. too bad. maybe we're redoing a bad run or something.
-        mediafiles = self.iterate_local_mediafiles_for_project(project)
         outputpath = os.path.join(basedir, project + '_local_media.gz')
         with gzip.open(outputpath, "wb") as output:
-            for path in mediafiles:
+            for path in self.iterate_local_mediafiles_for_project(project):
                 dirname, filename = os.path.split(path)
                 # yep we get to stat them all. groan
                 mtime = os.stat(path).st_mtime
                 timestamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(mtime))
                 output.write('{filename} {timestamp} {dirname}\n'.format(
-                    filename=filename, timestamp=timestamp, dirname=dirname))
+                    filename=filename, timestamp=timestamp, dirname=dirname).encode('utf-8'))
 
     def get_local_media_lists(self):
         '''write a list of all media for each local project'''
