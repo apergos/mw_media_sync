@@ -25,7 +25,7 @@ def usage(message=None):
     if message:
         sys.stderr.write("%s\n" % message)
     usage_message = """Usage: $0 --configfile <path> [--projects] [--retries <num>] [--wait <num>]
-          [--verbose]
+          [--verbose] [--dryrun]
 or: $0 --help
 
 This script retrieves information about media files uploaded or in use on a group of wikis,
@@ -43,6 +43,7 @@ Arguments:
     --wait       (-w)    the number of seconds to wait between downloads; if set here,
                          this will override any value in the config file
     --verbose    (-v)    display various progress messages as the script runs
+    --dryrun     (-d)    don't create or delete any files, show what would have been done
 """
     sys.stderr.write(usage_message)
     sys.exit(1)
@@ -52,6 +53,7 @@ def parse_args():
     '''get args passed on the command line
     and return as a dict'''
     args = {'verbose': False,
+            'dryrun': False,
             'help': False,
             'configfile': None,
             'projects_todo': None,
@@ -59,8 +61,8 @@ def parse_args():
             'wait': None}
     try:
         (options, remainder) = getopt.gnu_getopt(
-            sys.argv[1:], "c:p:r:w:vh", ["configfile=", "retries=", "wait=",
-                                         "projects=", "verbose", "help"])
+            sys.argv[1:], "c:p:r:w:dvh", ["configfile=", "retries=", "wait=",
+                                          "projects=", "verbose", "dryrun", "help"])
 
     except getopt.GetoptError as err:
         usage("Unknown option specified: " + str(err))
@@ -76,6 +78,8 @@ def parse_args():
             args['wait'] = val
         elif opt in ["-v", "--verbose"]:
             args['verbose'] = True
+        elif opt in ["-d", "--dryrun"]:
+            args['dryrun'] = True
         elif opt in ["-h", "--help"]:
             usage('Help for this script\n')
         else:
@@ -174,7 +178,8 @@ def merge_config(config, args):
 def get_projecttype_from_url(url):
     '''give an url blah.wikisomething.org, dig the wikisomething
     piece out and return it. yes it stinks.'''
-    return url.rsplit('.', 2)[0]
+    # https://si.wikipedia.org
+    return url.rsplit('.', 2)[1]
 
 
 def get_active_projects(config):
@@ -256,7 +261,7 @@ def do_main():
     if args['verbose']:
         print("active projects are:", ",".join(active_projects.keys()))
 
-    syncer = Sync(config, active_projects, args['projects_todo'])
+    syncer = Sync(config, active_projects, args['projects_todo'], args['verbose'], args['dryrun'])
     syncer.init_local_mediadirs()
     syncer.archive_inactive_projects()
     syncer.get_local_media_lists()

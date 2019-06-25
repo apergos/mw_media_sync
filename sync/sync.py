@@ -32,22 +32,76 @@ storing it some nice place, with retries'''
         return True
 
 
+class ActiveProjects():
+    '''keeping track of and manipulating the list of projects
+    active on the remote end'''
+
+    def __init__(self, active_projects):
+        '''
+        arg: dict of active projects
+        '''
+        self.projects = active_projects
+        self.projecttypes_langcodes_to_dbnames = self.get_active_projects_by_projecttype_langcode()
+
+    def get_active_projects_by_projecttype_langcode(self):
+        '''convert the active projects dict into one that uses the projecttype and langcode
+        for a key and spits out the dbname (projectname) instead'''
+        to_return = {}
+        for dbname in self.projects:
+            projecttype = self.projects[dbname]['projecttype']
+            langcode = self.projects[dbname]['langcode']
+            to_return[projecttype + '/' + langcode] = dbname
+        return to_return
+
+    def get_projectname_from_type_langcode(self, projecttype, langcode):
+        '''given the project type and the so-called langcode, return
+        the project name (i.e. dbname) if it exists in active projects.
+        if it does not, return projectype/langcode (caller should use the embedded /
+        as an indicator that the project is not known any longer on the remote side)'''
+        try:
+            return self.projecttypes_langcodes_to_dbnames[projecttype + '/' + langcode]
+        except KeyError:
+            return projecttype + '/' + langcode
+
+    def get_projecttype_langcode(self, project):
+        '''given a project name which is either a dbname (and findable in
+        active_projects) or a string of the format projecttype/langcode, return
+        the projecttype and the so-called langcode, as in the examples below:
+        enwiki -> wikipedia, en
+        commonswiki -> wikipedia, commons'''
+        if '/' in project:
+            projecttype, langcode = project.split('/')
+        else:
+            projecttype = self.projects[project]['projecttype']
+            langcode = self.projects[project]['langcode']
+        return (projecttype, langcode)
+
+    def active(self, project):
+        '''if the project name has a '/' in it, it's not active. it means
+        we didn't find it in the list of projects on the remote host,
+        no dbname, all we have are the projecttype and the langcode and
+        we codged together a so-called project name out of that.'''
+        return not bool('/' in project)
+
+
 class Sync():
     '''methods for syncing media from a remote MediaWiki
     instance or instances, to a local server'''
 
-    def __init__(self, config, active_projects, projects_todo):
+    def __init__(self, config, active_projects, projects_todo, verbose=False, dryrun=False):
         '''
         configparser instance,
         dict of active projects,
         list of projects to actually operate on
         '''
         self.config = config
-        self.active_projects = active_projects
+        self.active = ActiveProjects(active_projects)
         self.projects_todo = None
         if projects_todo:
             self.projects_todo = [project for project in projects_todo
                                   if project in active_projects]
+        self.verbose = verbose
+        self.dryrun = dryrun
 
     def init_local_mediadirs(self):
         '''if there is no local basedir for media, or if
@@ -55,9 +109,7 @@ class Sync():
         create it and the associated hashdirs'''
 
         basedir = self.config['mediadir']
-        if not os.path.exists(basedir):
-            os.makedirs(basedir)
-        projects_todo = self.active_projects.keys()
+        projects_todo = self.active.projects.keys()
         if self.projects_todo:
             projects_todo = self.projects_todo
 
@@ -67,44 +119,70 @@ class Sync():
             hexdigits_split = list(hexdigits)
             for first_digit in hexdigits_split:
                 for ending in hexdigits_split:
-                    subdir = os.path.join(basedir, project, first_digit, first_digit + ending)
+                    subdir = os.path.join(basedir,
+                                          self.active.projects[project]['projecttype'],
+                                          self.active.projects[project]['langcode'],
+                                          first_digit, first_digit + ending)
                     if not os.path.exists(subdir):
-                        os.makedirs(subdir)
+                        if self.dryrun:
+                            print("would make directory(ies):", subdir)
+                        else:
+                            os.makedirs(subdir)
 
     def get_local_projects(self):
         '''return list of locally synced projects'''
-        return os.listdir(self.config['mediadir'])
+        projects = []
+        projecttypes = os.listdir(self.config['mediadir'])
+        for projecttype in projecttypes:
+            langcodes = os.listdir(os.path.join(self.config['mediadir'], projecttype))
+            for langcode in langcodes:
+                projects.append(self.active.get_projectname_from_type_langcode(
+                    projecttype, langcode))
+        return projects
 
     def archive_project(self, project):
         '''move the project subdir into the archive area,
-        adding the current date and time onto the project name'''
+        adding the current date and time onto the langcode name'''
         if not os.path.exists(self.config['archivedir']):
             os.makedirs(self.config['archivedir'])
 
+        projecttype, langcode = self.active.get_projecttype_langcode(project)
         now = time.strftime("%Y%m%d%H%M%S", time.gmtime())
         # yes this is only good down to the nearest second.
         # we shouldn't be trying to archive multiple copies
         # of a project in the same second anyways
-        newname = project + '.' + now
+        newname = langcode + '.' + now
 
         # very possible that archive area will be on a different filesystem
         # from the (probably web-accessible) media sync, don't take any chances
-        shutil.move(os.path.join(self.config['mediadir'], project),
-                    os.path.join(self.config['archivedir'], newname))
+        if self.dryrun:
+            print("would move", os.path.join(self.config['mediadir'], projecttype, langcode),
+                  "to", os.path.join(self.config['archivedir'], projecttype, newname))
+        else:
+            shutil.move(os.path.join(self.config['mediadir'], projecttype, langcode),
+                        os.path.join(self.config['archivedir'], projecttype, newname))
 
     def dir_is_empty(self, dirname):
         '''return True if directory has no contents'''
         return not bool(len(os.listdir(os.path.join(self.config['mediadir'], dirname))))
 
+    def get_project_dir(self, project):
+        '''given a project name which is either a dbname (and findable in
+        active.projects) or a string of the format projecttype/langcode, return
+        the full path to the local directory of media for the project, whether
+        the dir exists or not'''
+        (projecttype, langcode) = self.active.get_projecttype_langcode(project)
+        return os.path.join(self.config['mediadir'], projecttype, langcode)
+
     def project_is_empty(self, project):
         '''return True if the specified project has no media
         stored locally'''
-        basedir = self.config['mediadir']
+        project_dir = self.get_project_dir(project)
         hexdigits = '0123456789abcdef'
         hexdigits_split = list(hexdigits)
         for first_digit in hexdigits_split:
             for ending in hexdigits_split:
-                subdir = os.path.join(basedir, project, first_digit, first_digit + ending)
+                subdir = os.path.join(project_dir, first_digit, first_digit + ending)
                 if os.path.exists(subdir):
                     if not self.dir_is_empty(subdir):
                         return False
@@ -118,46 +196,45 @@ class Sync():
         archive/inactive/projectname-date-media.tar.gz
         return'''
         for project in self.get_local_projects():
-            if project not in self.active_projects and not self.project_is_empty(project):
+            if project not in self.active.projects and not self.project_is_empty(project):
                 self.archive_project(project)
 
     def iterate_local_mediafiles_for_project(self, project):
         '''return an iterator which will return the full path of each local media file
         for the specified project, in turn'''
-        # FIXME use this, oh well
-        # (project_type, lang_code) = self.get_project_type_lcode(project)
-        basedir = os.path.join(self.config['mediadir'], project)
+        (projecttype, langcode) = self.active.get_projecttype_langcode(project)
+        basedir = os.path.join(self.config['mediadir'], projecttype, langcode)
         for dirpath, dirnames, filenames in os.walk(basedir):
             for mediafile in filenames:
                 yield os.path.join(dirpath, mediafile)
 
-    def get_project_type_lcode(self, project):
-        '''given a project name return the project type and the
-        so-called language code, as in the examples below:
-        enwiki -> wikipedia, en
-        commonswiki -> wikipedia, commons'''
-        return (self.active_projects['projecttype'], self.active_projects['langcode'])
-
     def record_local_media_for_project(self, project, date):
-        '''write a list of all media for each local project,
+        '''write a list of all media for a local active project,
         with path: basename, project name, hashdir and ctime
         so each entry will look like:
         01_Me_and_My_Microphone.ogg YYYYMMDDHHMMSS <mediadir>/wikipedia/en/a/a6/
         this file will live in <listsdir>/date/<project>/<project>_local_media.gz'''
+        if not self.active.active(project):
+            if self.verbose:
+                print("skipping list of local media for", project, "as not active")
+            return
         basedir = os.path.join(self.config['listsdir'], date, project)
         if not os.path.exists(basedir):
             os.makedirs(basedir)
         # if it's already there, what does that mean for us? we'll overwrite the
         # existing list. too bad. maybe we're redoing a bad run or something.
         outputpath = os.path.join(basedir, project + '_local_media.gz')
-        with gzip.open(outputpath, "wb") as output:
-            for path in self.iterate_local_mediafiles_for_project(project):
-                dirname, filename = os.path.split(path)
-                # yep we get to stat them all. groan
-                mtime = os.stat(path).st_mtime
-                timestamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(mtime))
-                output.write('{filename} {timestamp} {dirname}\n'.format(
-                    filename=filename, timestamp=timestamp, dirname=dirname).encode('utf-8'))
+        if self.dryrun:
+            print("for project", project, "would log media into", outputpath)
+        else:
+            with gzip.open(outputpath, "wb") as output:
+                for path in self.iterate_local_mediafiles_for_project(project):
+                    dirname, filename = os.path.split(path)
+                    # yep we get to stat them all. groan
+                    mtime = os.stat(path).st_mtime
+                    timestamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(mtime))
+                    output.write('{filename} {timestamp} {dirname}\n'.format(
+                        filename=filename, timestamp=timestamp, dirname=dirname).encode('utf-8'))
 
     def get_local_media_lists(self):
         '''write a list of all media for each local project'''
