@@ -3,6 +3,7 @@ import os
 import gzip
 import shutil
 import time
+from subprocess import Popen, PIPE
 
 
 class GetWebFile():
@@ -208,6 +209,33 @@ class Sync():
             for mediafile in filenames:
                 yield os.path.join(dirpath, mediafile)
 
+    def sort_local_media_for_project(self, project, date):
+        '''read a list of all media for a local active project,
+        with path: basename, project name, hashdir and ctime, sort
+        it by media file title
+        each entry in the file looks likt
+        01_Me_and_My_Microphone.ogg YYYYMMDDHHMMSS <mediadir>/wikipedia/en/a/a6/
+        the sorted file will live in <listsdir>/date/<project>/<project>_local_media_sorted.gz'''
+        if not self.active.active(project):
+            if self.verbose:
+                print("skipping list of local media for", project, "as not active")
+            return
+        basedir = os.path.join(self.config['listsdir'], date, project)
+        outputpath = os.path.join(basedir, project + '_local_media_sorted.gz')
+        inputpath = os.path.join(basedir, project + '_local_media.gz')
+        command = "zcat {infile} | sort -k 1 -S 70% | gzip > {outfile}".format(
+            infile=inputpath, outfile=outputpath)
+        if self.dryrun:
+            print("for project", project, "would sort media into", outputpath, 'with command:')
+            print(command)
+        else:
+            # these lists can be huge so let's not fool ourselves into thinking
+            # we're going to do it all in memory.
+            with Popen(command, shell=True, stderr=PIPE) as proc:
+                _unused_output, errors = proc.communicate()
+                if errors:
+                    print(errors.decode('utf-8').rstrip('\n'))
+
     def record_local_media_for_project(self, project, date):
         '''write a list of all media for a local active project,
         with path: basename, project name, hashdir and ctime
@@ -244,10 +272,13 @@ class Sync():
         local_projects = self.get_local_projects()
         for project in local_projects:
             self.record_local_media_for_project(project, today)
+        return today
 
-    def sort_local_media_lists(self):
+    def sort_local_media_lists(self, today):
         '''read and sort the local media lists'''
-        return
+        local_projects = self.get_local_projects()
+        for project in local_projects:
+            self.sort_local_media_for_project(project, today)
 
     def get_project_uploaded_media(self):
         '''get via http from remote server the latest list
