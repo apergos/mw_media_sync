@@ -348,17 +348,18 @@ class Sync():
         if dates:
             latest = sorted(dates)[-1]
             if self.verbose:
-                print("Latest uploaded media files for", baseurl, "have date", latest)
+                print("Latest remote media file lists for", baseurl, "have date", latest)
             return latest
 
         if self.verbose:
             print("No uploaded media files for", baseurl)
         return None
 
-    def get_project_uploaded_media(self):
-        '''get via http from remote server the latest list
-        of filenames/timestamps of media that was uploaded locally
-        to each project, for all active projects'''
+    def get_project_remote_media(self, filename_template, err_message):
+        '''get via http from remote server the latest list of
+        filenames/timestamps of media with the given filename
+        template, plugging in project name and date, for all projects to do
+        Example filename template: {project}-{date}-local-wikiqueries.gz'''
         date = self.get_latest_uploaded_medialists_date()
         if not date:
             return
@@ -367,19 +368,25 @@ class Sync():
         getter = WebGetter(self.config, self.dryrun)
         for project in self.active.projects:
             if project in self.projects_todo:
-                filename = '{project}-{date}-local-wikiqueries.gz'.format(
-                    project=project, date=date)
+                filename = filename_template.format(project=project, date=date)
                 url = baseurl + '/' + filename
                 output_path = os.path.join(self.config['listsdir'], self.local.today, filename)
-                error = 'Failed to retrieve list of uploaded media for project: ' + project
-                getter.get_file(url, output_path, error)
+                getter.get_file(url, output_path, err_message + project)
+
+    def get_project_uploaded_media(self):
+        '''get via http from remote server the latest list
+        of filenames/timestamps of media that was uploaded locally
+        to each project, for projects to do'''
+        error = 'Failed to retrieve list of uploaded media for project: '
+        self.get_project_remote_media('{project}-{date}-local-wikiqueries.gz', error)
 
     def get_project_foreignrepo_media(self):
         '''get via http from remote server the latest list
         of names of media that were uploaded to the remote
-        repo for a project but are used locally, for all
-        active projects'''
-        return
+        repo for a project but are used locally, for projects
+        to do'''
+        error = 'Failed to retrieve list of foreign repo media for project: '
+        self.get_project_remote_media('{project}-{date}-remote-wikiqueries.gz', error)
 
     def cleanup_project_uploaded_media_lists(self):
         '''uncompress, remove the first line which reflects sql table columns,
