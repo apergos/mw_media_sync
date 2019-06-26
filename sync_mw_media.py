@@ -5,13 +5,12 @@ import json
 import os
 import urllib
 import sys
-import time
 import requests
-from sync.sync import Sync
+from sync.sync import Sync, WebGetter, LocalFiles
 
 
 CONFIG_SECTIONS = {'dirs': ['mediadir', 'archivedir', 'listsdir'],
-                   'urls': ['api_url', 'foreignrepo_media_url', 'uploaded_media_url'],
+                   'urls': ['api_url', 'media_filelists_url', 'uploaded_media_url'],
                    'limits': ['http_wait', 'http_retries', 'max_uploaded_gets',
                               'max_foreignrepo_gets'],
                    'misc': ['foreignrepo', 'agent']}
@@ -182,7 +181,7 @@ def get_projecttype_from_url(url):
     return url.rsplit('.', 2)[1]
 
 
-def get_active_projects(config):
+def get_active_projects(config, dryrun):
     '''get list of active projects from remote MediaWiki
     via the api, convert it to a dict of entries with key the dbname
     and containing projecttype, langcode for each wiki, and return it'''
@@ -192,22 +191,11 @@ def get_active_projects(config):
     sess = requests.Session()
     sess.headers.update(
         {"User-Agent": config['agent'], "Accept": "application/json"})
+    getter = WebGetter(config, dryrun=dryrun)
+    errors = 'Failed to retrieve list of active projects'
+    content = getter.get_content(baseurl, errors, session=sess, params=params)
 
-    retried = 0
-    done = False
-    while not done and retried < config['http_retries']:
-        response = sess.get(baseurl, params=params, timeout=5)
-        if response.status_code == 200:
-            done = True
-        else:
-            retried += 1
-            time.sleep(config['http_wait'])
-    if not done:
-        sys.stderr.write('Failed to retrieve list of active projects ' +
-                         '(response code: {code}\n'.format(code=response.status_code))
-        response.raise_for_status()
-
-    siteinfo = json.loads(response.content)
+    siteinfo = json.loads(content)
     active_projects = {}
     for sitegroup in siteinfo['sitematrix']:
         if sitegroup == 'specials':
@@ -256,16 +244,20 @@ def do_main():
     validate_config(config)
     merge_config(config, args)
 
-    active_projects = get_active_projects(config)
+    active_projects = get_active_projects(config, args['dryrun'])
     exclude_foreign_repo(config, active_projects)
     if args['verbose']:
         print("active projects are:", ",".join(active_projects.keys()))
 
-    syncer = Sync(config, active_projects, args['projects_todo'], args['verbose'], args['dryrun'])
-    syncer.init_local_mediadirs()
-    syncer.archive_inactive_projects()
-    date = syncer.get_local_media_lists()
-    syncer.sort_local_media_lists(date)
+    local = LocalFiles(config, active_projects, args['projects_todo'],
+                       args['verbose'], args['dryrun'])
+    local.init_mediadirs()
+    local.archive_inactive_projects()
+    local.get_local_media_lists()
+    local.sort_local_media_lists()
+
+    syncer = Sync(config, active_projects, args['projects_todo'],
+                  args['verbose'], args['dryrun'])
     syncer.get_project_uploaded_media()
     syncer.get_project_foreignrepo_media()
     syncer.cleanup_project_uploaded_media_lists()

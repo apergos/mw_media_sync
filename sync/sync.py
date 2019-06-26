@@ -2,35 +2,62 @@
 import os
 import gzip
 import shutil
+import sys
 import time
 from subprocess import Popen, PIPE
+import requests
 
 
-class GetWebFile():
-    '''methods for retrieving a file over http(s) and
-storing it some nice place, with retries'''
-    def __init__(self, config):
+class WebGetter():
+    '''methods for getting content over http(s) and
+possibly storing it some nice place, with retries'''
+    def __init__(self, config, dryrun):
         self.config = config
+        self.dryrun = dryrun
 
-    def retrieve_file(self, url, localpath):
-        '''retrieve a file and put it in the
-        right place, with retries and wait
-        between retries as needed, returning True
-        on success and False on final failure'''
-        return True
+    def get_file(self, url, localpath, err_message):
+        '''retrieve a file and put it in the right place,
+        with retries and wait between retries as needed'''
+        headers = {"User-Agent": self.config['agent']}
+        retried = 0
+        done = False
+        while not done and retried < self.config['http_retries']:
+            response = requests.get(url, timeout=5, stream=True, headers=headers)
+            if response.status_code == 200:
+                done = True
+            else:
+                retried += 1
+                time.sleep(self.config['http_wait'])
+        if not done:
+            sys.stderr.write(err_message + ' (response code: {code}\n'.format(
+                code=response.status_code))
+            response.raise_for_status()
+        if self.dryrun:
+            print("would save output from", url, "to", localpath)
+            return
+        with open(localpath, 'wb') as output:
+            shutil.copyfileobj(response.raw, output)
 
-    def try_retrieval(self, url, localpath):
-        '''try to retrieve a file once; on
-        success, put it in the right place,
-        return True; on failure, remove any
-        partial file created, return False'''
-        # TODO FIXME how big are these files?
-        # are we doing chunked retrievals?
-        # does the request module let me tell
-        # it to write output directly to a dir
-        # or do I have to manage that? what
-        # about https/certs?
-        return True
+    def get_content(self, url, err_message, params=None, session=None):
+        '''retrieve content of a url, with retries'''
+        if not session:
+            session = requests.Session()
+        session.headers.update(
+            {"User-Agent": self.config['agent']})
+        retried = 0
+        done = False
+        while not done and retried < self.config['http_retries']:
+            response = session.get(url, timeout=5, params=params)
+            if response.status_code == 200:
+                done = True
+            else:
+                retried += 1
+                time.sleep(self.config['http_wait'])
+        if not done:
+            sys.stderr.write(err_message +
+                             ' (response code: {code}\n'.format(code=response.status_code))
+            response.raise_for_status()
+        return response.content
 
 
 class ActiveProjects():
@@ -85,10 +112,9 @@ class ActiveProjects():
         return not bool('/' in project)
 
 
-class Sync():
-    '''methods for syncing media from a remote MediaWiki
-    instance or instances, to a local server'''
-
+class LocalFiles():
+    '''methods for setting up local directories, listing local media,
+    archiving projects locally, etc'''
     def __init__(self, config, active_projects, projects_todo, verbose=False, dryrun=False):
         '''
         configparser instance,
@@ -101,10 +127,11 @@ class Sync():
         if projects_todo:
             self.projects_todo = [project for project in projects_todo
                                   if project in active_projects]
+        self.today = time.strftime("%Y%m%d", time.gmtime())
         self.verbose = verbose
         self.dryrun = dryrun
 
-    def init_local_mediadirs(self):
+    def init_mediadirs(self):
         '''if there is no local basedir for media, or if
         any active project dir underneath it does not exist,
         create it and the associated hashdirs'''
@@ -130,16 +157,16 @@ class Sync():
                         else:
                             os.makedirs(subdir)
 
-    def get_local_projects(self):
-        '''return list of locally synced projects'''
-        projects = []
-        projecttypes = os.listdir(self.config['mediadir'])
-        for projecttype in projecttypes:
-            langcodes = os.listdir(os.path.join(self.config['mediadir'], projecttype))
-            for langcode in langcodes:
-                projects.append(self.active.get_projectname_from_type_langcode(
-                    projecttype, langcode))
-        return projects
+    def archive_inactive_projects(self):
+        '''if a local directory references a project that
+        is not active, if the directory is empty (the hash dirs
+        underneath it are all empty), remove it; otherwise
+        tar up the media and move it to the directory
+        archive/inactive/projectname-date-media.tar.gz
+        return'''
+        for project in self.get_projects():
+            if project not in self.active.projects and not self.project_is_empty(project):
+                self.archive_project(project)
 
     def archive_project(self, project):
         '''move the project subdir into the archive area,
@@ -167,6 +194,17 @@ class Sync():
         '''return True if directory has no contents'''
         return not bool(len(os.listdir(os.path.join(self.config['mediadir'], dirname))))
 
+    def get_projects(self):
+        '''return list of locally synced projects'''
+        projects = []
+        projecttypes = os.listdir(self.config['mediadir'])
+        for projecttype in projecttypes:
+            langcodes = os.listdir(os.path.join(self.config['mediadir'], projecttype))
+            for langcode in langcodes:
+                projects.append(self.active.get_projectname_from_type_langcode(
+                    projecttype, langcode))
+        return projects
+
     def get_project_dir(self, project):
         '''given a project name which is either a dbname (and findable in
         active.projects) or a string of the format projecttype/langcode, return
@@ -189,27 +227,16 @@ class Sync():
                         return False
         return True
 
-    def archive_inactive_projects(self):
-        '''if a local directory references a project that
-        is not active, if the directory is empty (the hash dirs
-        underneath it are all empty), remove it; otherwise
-        tar up the media and move it to the directory
-        archive/inactive/projectname-date-media.tar.gz
-        return'''
-        for project in self.get_local_projects():
-            if project not in self.active.projects and not self.project_is_empty(project):
-                self.archive_project(project)
-
     def iterate_local_mediafiles_for_project(self, project):
         '''return an iterator which will return the full path of each local media file
         for the specified project, in turn'''
         (projecttype, langcode) = self.active.get_projecttype_langcode(project)
         basedir = os.path.join(self.config['mediadir'], projecttype, langcode)
-        for dirpath, dirnames, filenames in os.walk(basedir):
+        for dirpath, _dirnames, filenames in os.walk(basedir):
             for mediafile in filenames:
                 yield os.path.join(dirpath, mediafile)
 
-    def sort_local_media_for_project(self, project, date):
+    def sort_local_media_for_project(self, project, date=None):
         '''read a list of all media for a local active project,
         with path: basename, project name, hashdir and ctime, sort
         it by media file title
@@ -220,6 +247,8 @@ class Sync():
             if self.verbose:
                 print("skipping list of local media for", project, "as not active")
             return
+        if not date:
+            date = self.today
         basedir = os.path.join(self.config['listsdir'], date, project)
         outputpath = os.path.join(basedir, project + '_local_media_sorted.gz')
         inputpath = os.path.join(basedir, project + '_local_media.gz')
@@ -236,7 +265,7 @@ class Sync():
                 if errors:
                     print(errors.decode('utf-8').rstrip('\n'))
 
-    def record_local_media_for_project(self, project, date):
+    def record_local_media_for_project(self, project, date=None):
         '''write a list of all media for a local active project,
         with path: basename, project name, hashdir and ctime
         so each entry will look like:
@@ -246,6 +275,8 @@ class Sync():
             if self.verbose:
                 print("skipping list of local media for", project, "as not active")
             return
+        if not date:
+            date = self.today
         basedir = os.path.join(self.config['listsdir'], date, project)
         if not os.path.exists(basedir):
             os.makedirs(basedir)
@@ -265,26 +296,83 @@ class Sync():
                         filename=filename, timestamp=timestamp, dirname=dirname).encode('utf-8'))
 
     def get_local_media_lists(self):
-        '''write a list of all media for each local project'''
+        '''write a list of all media for each local project in the todo list'''
         if not os.path.exists(self.config['listsdir']):
             os.makedirs(self.config['listsdir'])
-        today = time.strftime("%Y%m%d", time.gmtime())
-        local_projects = self.get_local_projects()
+        local_projects = self.get_projects()
         for project in local_projects:
-            self.record_local_media_for_project(project, today)
-        return today
+            if project in self.projects_todo:
+                self.record_local_media_for_project(project)
 
-    def sort_local_media_lists(self, today):
+    def sort_local_media_lists(self):
         '''read and sort the local media lists'''
-        local_projects = self.get_local_projects()
+        local_projects = self.get_projects()
         for project in local_projects:
-            self.sort_local_media_for_project(project, today)
+            if project in self.projects_todo:
+                self.sort_local_media_for_project(project)
+
+
+class Sync():
+    '''methods for syncing media from a remote MediaWiki
+    instance or instances, to a local server'''
+
+    def __init__(self, config, active_projects, projects_todo, verbose=False, dryrun=False):
+        '''
+        configparser instance,
+        dict of active projects,
+        list of projects to actually operate on
+        '''
+        self.config = config
+        self.active = ActiveProjects(active_projects)
+        self.projects_todo = None
+        if projects_todo:
+            self.projects_todo = [project for project in projects_todo
+                                  if project in active_projects]
+        self.local = LocalFiles(config, active_projects, projects_todo, verbose, dryrun)
+        self.verbose = verbose
+        self.dryrun = dryrun
+
+    def get_latest_uploaded_medialists_date(self):
+        '''find the most recent date for lists uploaded media per project
+        at the specified url in the config'''
+        baseurl = self.config['media_filelists_url']
+        getter = WebGetter(self.config, self.dryrun)
+        errors = 'Failed to retrieve list of dates of uploaded media'
+        content = getter.get_content(baseurl, errors)
+        # entries we want:
+        # <a href="20190210/">20190210/</a>                                  10-Feb-2019 11:45
+        content = content.decode('utf-8')
+        dates = [line.split('"')[1].rstrip('/') for line in content.splitlines()
+                 if '<a href=' in line]
+        dates = [date for date in dates if date.isdigit() and len(date) == 8]
+        if dates:
+            latest = sorted(dates)[-1]
+            if self.verbose:
+                print("Latest uploaded media files for", baseurl, "have date", latest)
+            return latest
+
+        if self.verbose:
+            print("No uploaded media files for", baseurl)
+        return None
 
     def get_project_uploaded_media(self):
         '''get via http from remote server the latest list
         of filenames/timestamps of media that was uploaded locally
         to each project, for all active projects'''
-        return
+        date = self.get_latest_uploaded_medialists_date()
+        if not date:
+            return
+
+        baseurl = self.config['media_filelists_url'] + '/' + date
+        getter = WebGetter(self.config, self.dryrun)
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                filename = '{project}-{date}-local-wikiqueries.gz'.format(
+                    project=project, date=date)
+                url = baseurl + '/' + filename
+                output_path = os.path.join(self.config['listsdir'], self.local.today, filename)
+                error = 'Failed to retrieve list of uploaded media for project: ' + project
+                getter.get_file(url, output_path, error)
 
     def get_project_foreignrepo_media(self):
         '''get via http from remote server the latest list
