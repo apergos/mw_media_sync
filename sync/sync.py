@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import os
 import gzip
+import glob
 import shutil
 import sys
 import time
@@ -370,7 +371,8 @@ class Sync():
             if project in self.projects_todo:
                 filename = filename_template.format(project=project, date=date)
                 url = baseurl + '/' + filename
-                output_path = os.path.join(self.config['listsdir'], self.local.today, filename)
+                output_path = os.path.join(self.config['listsdir'],
+                                           self.local.today, project, filename)
                 getter.get_file(url, output_path, err_message + project)
 
     def get_project_uploaded_media(self):
@@ -388,16 +390,55 @@ class Sync():
         error = 'Failed to retrieve list of foreign repo media for project: '
         self.get_project_remote_media('{project}-{date}-remote-wikiqueries.gz', error)
 
+    def remove_first_line_sort(self, inpath, outpath):
+        '''remove first line of contents of gzipped input file, gzip,
+        write to output file'''
+        command = "zcat {infile} | tail -n +2 | sort -k 1 -S 70% | gzip > {outfile}".format(
+            infile=inpath, outfile=outpath)
+        if self.dryrun:
+            print("would filter/sort media list", inpath, "into", outpath, 'with command:')
+            print(command)
+        else:
+            # these lists can be huge so let's not fool ourselves into thinking
+            # we're going to do it all in memory.
+            if self.verbose:
+                print("about to run command:", command)
+            with Popen(command, shell=True, stderr=PIPE) as proc:
+                _unused_output, errors = proc.communicate()
+                if errors:
+                    print(errors.decode('utf-8').rstrip('\n'))
+
     def cleanup_project_uploaded_media_lists(self):
         '''uncompress, remove the first line which reflects sql table columns,
         sort, write anew in filelists/date/projectname/projectname-uploads-sorted.gz,
-        for all active projects'''
-        return
+        for all projects to do'''
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                filename_base = '{project}-*-local-wikiqueries.gz'.format(project=project)
+                output_path = os.path.join(self.config['listsdir'],
+                                           self.local.today, project, filename_base)
+                todays_files = glob.glob(output_path)
+                if not todays_files:
+                    print("warning: no media list files found for project", project)
+                    continue
+
+                most_recent = sorted(todays_files)[-1]
+                if not most_recent.endswith('.gz'):
+                    print("warning: bad filename found,", most_recent)
+                    continue
+                newname = project + 'uploads-sorted.gz'
+
+                if self.dryrun:
+                    print("would filter {old} to {new}".format(
+                        old=most_recent, new=newname))
+                    return
+
+                self.remove_first_line_sort(most_recent, newname)
 
     def cleanup_project_foreignrepo_media_lists(self):
         '''uncompress, remove the first line which reflects sql table columns,
         sort, write anew in filelists/date/projectname/projectname-foreignrepo-sorted.gz,
-        for all active projects'''
+        for all projects todo'''
         return
 
     def generate_uploaded_files_to_get(self):
