@@ -408,25 +408,29 @@ class Sync():
                 if errors:
                     print(errors.decode('utf-8').rstrip('\n'))
 
-    def cleanup_project_uploaded_media_lists(self):
+    def cleanup_project_media_lists(self, in_filename_template, out_filename_template):
         '''uncompress, remove the first line which reflects sql table columns,
         sort, write anew in filelists/date/projectname/projectname-uploads-sorted.gz,
-        for all projects to do'''
+        for all projects to do
+        in_ and out_ filename templates will have the project name substituted in.
+        example filename template: {project}-*-local-wikiqueries.gz'''
         for project in self.active.projects:
             if project in self.projects_todo:
-                filename_base = '{project}-*-local-wikiqueries.gz'.format(project=project)
-                output_path = os.path.join(self.config['listsdir'],
-                                           self.local.today, project, filename_base)
-                todays_files = glob.glob(output_path)
+                filename_base = in_filename_template.format(project=project)
+                media_lists_path = os.path.join(self.config['listsdir'],
+                                                self.local.today, project, filename_base)
+                todays_files = glob.glob(media_lists_path)
                 if not todays_files:
-                    print("warning: no media list files found for project", project)
+                    print("warning: no media list files found of format", in_filename_template,
+                          "for project", project)
                     continue
 
                 most_recent = sorted(todays_files)[-1]
                 if not most_recent.endswith('.gz'):
                     print("warning: bad filename found,", most_recent)
                     continue
-                newname = project + 'uploads-sorted.gz'
+                newname = os.path.join(self.config['listsdir'], self.local.today, project,
+                                       out_filename_template.format(project=project))
 
                 if self.dryrun:
                     print("would filter {old} to {new}".format(
@@ -435,11 +439,21 @@ class Sync():
 
                 self.remove_first_line_sort(most_recent, newname)
 
+    def cleanup_project_uploaded_media_lists(self):
+        '''uncompress, remove the first line which reflects sql table columns,
+        sort, write anew in filelists/date/projectname/projectname-uploads-sorted.gz,
+        for all projects to do'''
+        in_filename_template = '{project}-*-local-wikiqueries.gz'
+        out_filename_template = '{project}-uploads-sorted.gz'
+        self.cleanup_project_media_lists(in_filename_template, out_filename_template)
+
     def cleanup_project_foreignrepo_media_lists(self):
         '''uncompress, remove the first line which reflects sql table columns,
         sort, write anew in filelists/date/projectname/projectname-foreignrepo-sorted.gz,
         for all projects todo'''
-        return
+        in_filename_template = '{project}-*-remote-wikiqueries.gz'
+        out_filename_template = '{project}-foreignrepo-sorted.gz'
+        self.cleanup_project_media_lists(in_filename_template, out_filename_template)
 
     def generate_uploaded_files_to_get(self):
         '''reading the list of uploaded files to get for each active
