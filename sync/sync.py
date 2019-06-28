@@ -455,7 +455,8 @@ class Sync():
         out_filename_template = '{project}-foreignrepo-sorted.gz'
         self.cleanup_project_media_lists(in_filename_template, out_filename_template)
 
-    def generate_uploaded_files_to_get(self):
+    def list_uploaded_files_toget_for_project(self, local_files_list,
+                                              uploaded_files_list, output_path):
         '''reading the list of uploaded files to get for each active
         project, check the list of local files and see if we have it;
         if we do, see if the timestamp is more recent than the timestamp
@@ -465,7 +466,99 @@ class Sync():
         Also add all files to
         filelists/date/projectname/projectname-uploaded-files-to-keep,
         we'll use that to figure out deletions later'''
-        return
+        localfile = b""
+        if self.dryrun:
+            print("would write {outpath} from {localpath}, {uploadedpath}".format(
+                outpath=output_path, localpath=local_files_list, uploadedpath=uploaded_files_list))
+            return
+        if self.verbose:
+            print("writing {outpath} from {localpath}, {uploadedpath}".format(
+                outpath=output_path, localpath=local_files_list, uploadedpath=uploaded_files_list))
+        with gzip.open(local_files_list, "rb") as local_files:
+            with gzip.open(uploaded_files_list, "rb") as uploaded_files:
+                with gzip.open(output_path, "wb") as output:
+                    while True:
+                        uploaded_line = uploaded_files.readline()
+                        if not uploaded_line:
+                            # done!
+                            return
+                        uploaded_fields = uploaded_line.rstrip().split()
+                        uploadedfile, uploadedtime = uploaded_fields[0], uploaded_fields[1]
+                        while (localfile is not None and localfile < uploadedfile):
+                            last_local_line = local_files.readline().rstrip()
+                            if last_local_line:
+                                last_local_fields = last_local_line.split()
+                                localfile, localtime = last_local_fields[0], last_local_fields[1]
+                            else:
+                                localfile = None
+                        if not localfile or localfile > uploadedfile:
+                            # FIXME make sure that alphabetizing works the way we expect,
+                            # that AFILE.jpg is earlier (less than) AFILE.jpg.jpg
+
+                            # we don't have it. we want it.
+                            output.write(uploadedfile + b'\n')
+                        elif localfile == uploadedfile and localtime < uploadedtime:
+                            # our timestamp is older than remote upload's
+                            output.write(uploadedfile + b'\n')
+
+    def generate_uploaded_files_to_get(self):
+        '''for each project to do, generate a list of uploaded files we
+        don't have locally, and write the list into a file for retrieval later.
+        Also write all uploaded files into a 'keep these' list, to be used
+        for managing deletions later.'''
+        basedir = self.config['listsdir']
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                local_files_list = os.path.join(basedir, self.local.today, project,
+                                                project + '_local_media_sorted.gz')
+                uploaded_files_list = os.path.join(basedir, self.local.today, project,
+                                                   project + '-uploads-sorted.gz')
+                output_path = os.path.join(basedir, self.local.today, project,
+                                           project + '-uploaded-toget.gz')
+                self.list_uploaded_files_toget_for_project(
+                    local_files_list, uploaded_files_list, output_path)
+
+    def list_foreignrepo_files_toget_for_project(self, local_files_list,
+                                                 foreignrepo_files_list, output_path):
+        '''reading the list of foreign repo files to get for each active
+        project, check the list of local files and see if we have it;
+        if we don't, add this file to the list of files to get from the
+        local project:
+        filelists/date/projectname/projectname-foreignrepo-files-to-get.gz
+        Also add all files to
+        filelists/date/projectname/projectname-foreignrepo-files-to-keep,
+        we'll use that to figure out deletions later'''
+        localfile = b""
+        if self.dryrun:
+            print("would write {outpath} from {localpath}, {foreignrepopath}".format(
+                outpath=output_path, localpath=local_files_list,
+                foreignrepopath=foreignrepo_files_list))
+            return
+        if self.verbose:
+            print("writing {outpath} from {localpath}, {foreignrepopath}".format(
+                outpath=output_path, localpath=local_files_list,
+                foreignrepopath=foreignrepo_files_list))
+        with gzip.open(local_files_list, "rb") as local_files:
+            with gzip.open(foreignrepo_files_list, "rb") as foreignrepo_files:
+                with gzip.open(output_path, "wb") as output:
+                    while True:
+                        foreignrepo_line = foreignrepo_files.readline()
+                        if not foreignrepo_line:
+                            # done!
+                            return
+                        foreignrepofile = foreignrepo_line.rstrip()
+                        while (localfile is not None and localfile < foreignrepofile):
+                            last_local_line = local_files.readline()
+                            if last_local_line:
+                                localfile = last_local_line.split()[0]
+                            else:
+                                localfile = None
+                        if not localfile or localfile > foreignrepofile:
+                            # FIXME make sure that alphabetizing works the way we expect,
+                            # that AFILE.jpg is earlier (less than) AFILE.jpg.jpg
+
+                            # we don't have it. we want it.
+                            output.write(foreignrepofile + b'\n')
 
     def generate_foreignrepo_files_to_get(self):
         '''reading the list of foreignrepo files to get for each active
@@ -478,7 +571,17 @@ class Sync():
         we'll use that to figure out deletions later
         NOTE that we might have an older copy than the remote server
         and we have no way to check for that at present. FIXME'''
-        return
+        basedir = self.config['listsdir']
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                local_files_list = os.path.join(basedir, self.local.today, project,
+                                                project + '_local_media_sorted.gz')
+                foreignrepo_files_list = os.path.join(basedir, self.local.today, project,
+                                                      project + '-foreignrepo-sorted.gz')
+                output_path = os.path.join(basedir, self.local.today, project,
+                                           project + '-foreignrepo-toget.gz')
+                self.list_foreignrepo_files_toget_for_project(
+                    local_files_list, foreignrepo_files_list, output_path)
 
     def merge_sort_files_to_keep(self):
         '''for each active project, merge the lists of uploaded

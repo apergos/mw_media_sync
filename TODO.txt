@@ -1,0 +1,39 @@
+This approach is very inefficient, downloading and processing the same files
+again although we already have them, either for an earlier run today or a previous
+run. Keeping track of the most recent files, doing HEAD requests would be nice.
+
+We need to filter out dups from the gil report (foreign repo list) so we don't
+download them more than once.
+
+separate sessions for each download so we are not keeping a connection tied
+up on these servers. Slower for us but who cares.
+
+No prep for deletion done yet.
+
+See if request module needs urlencoding of stuff in the url it's passed (for
+downloading media files)
+
+Be prepared to try to download a bunch of stuff that doesn't exist (see
+notes.txt for this), find a nice way to handle these cases
+
+Once we have deleted all downloaded files not in use any more on the remote side,
+we should be able to keep some sort of diff, 'here are new files on the remote
+that have been deleted' by comparing the last two lists of remote files and
+seeing what's been removed. Then we can look just for those newly deleted files
+locally and get rid of them if we have them. MUCH cheaper.
+
+Once we have downloaded all files in use on the remote side, we should be able
+to generate a list of NEW files only, by comparing last two lists, and just
+get those, without all this headache and walking directory trees and statting
+a billion files etc. There will be the timestamp issue however; we need also
+a way to generate a list of all files that have had new versions uploaded since
+the last time, both uploaded to the project repo and uploaded to the foreign
+repo.
+
+We still have to deal with timestamps for foreign repo files, which we don't have,
+so we can't compare versions.
+
+So, lots to do, even after a first kinda-working version is done.
+
+
+

@@ -1,0 +1,26 @@
+you can make any kind of junk show up in gil. How? Look at this:
+
+wikiadmin@10.64.48.150(commonswiki)> select * from globalimagelinks where gil_wiki = 'siwiki' and gil_to = 'Bgdgfahda';
++----------+----------+-----------------------+-----------------------+---------------------+-----------+
+| gil_wiki | gil_page | gil_page_namespace_id | gil_page_namespace    | gil_page_title      | gil_to    |
++----------+----------+-----------------------+-----------------------+---------------------+-----------+
+| siwiki   |    42928 |                     2 | පරිශීලක               | Praxis_collectivesl | Bgdgfahda |
++----------+----------+-----------------------+-----------------------+---------------------+-----------+
+1 row in set (0.00 sec)
+
+Now look at the source from the page, පරිශීලක:Praxis_collectivesl
+
+-----------------------
+<gallery> http://profile.ak.fbcdn.net/hprofile-ak-prn1/173584_100003658738403_780220202_n.jpg
+ගොනුව:උදාහරණ.jpg| 1 යටි ලියමන
+
+scnhiugvui
+gfdgf
+bgdgfahda
+bdabf
+adgag
+agdbd
+gdfdag
+gdfd
+-----------------------
+all that cruft? it all gets entries in gil even though it's garbage. >_<
