@@ -10,7 +10,8 @@ from sync.sync import Sync, WebGetter, LocalFiles
 
 
 CONFIG_SECTIONS = {'dirs': ['mediadir', 'archivedir', 'listsdir'],
-                   'urls': ['api_url', 'media_filelists_url', 'uploaded_media_url'],
+                   'urls': ['api_url', 'media_filelists_url', 'uploaded_media_url',
+                            'foreignrepo_media_url'],
                    'limits': ['http_wait', 'http_retries', 'max_uploaded_gets',
                               'max_foreignrepo_gets'],
                    'misc': ['foreignrepo', 'agent']}
@@ -248,7 +249,6 @@ def do_main():
     exclude_foreign_repo(config, active_projects)
     if args['verbose']:
         print("active projects are:", ",".join(active_projects.keys()))
-
     local = LocalFiles(config, active_projects, args['projects_todo'],
                        args['verbose'], args['dryrun'])
     local.init_mediadirs()

@@ -2,6 +2,7 @@
 import os
 import gzip
 import glob
+import hashlib
 import shutil
 import sys
 import time
@@ -16,7 +17,7 @@ possibly storing it some nice place, with retries'''
         self.config = config
         self.dryrun = dryrun
 
-    def get_file(self, url, localpath, err_message):
+    def get_file(self, url, localpath, err_message, return_on_fail=False):
         '''retrieve a file and put it in the right place,
         with retries and wait between retries as needed'''
         headers = {"User-Agent": self.config['agent']}
@@ -30,12 +31,15 @@ possibly storing it some nice place, with retries'''
                 retried += 1
                 time.sleep(self.config['http_wait'])
         if not done:
-            sys.stderr.write(err_message + ' (response code: {code}\n'.format(
+            sys.stderr.write(err_message + ' (response code: {code})\n'.format(
                 code=response.status_code))
+            if return_on_fail:
+                return response.status_code
             response.raise_for_status()
+
         if self.dryrun:
             print("would save output from", url, "to", localpath)
-            return
+            return 200
         with open(localpath, 'wb') as output:
             shutil.copyfileobj(response.raw, output)
 
@@ -316,11 +320,18 @@ class LocalFiles():
 class Sync():
     '''methods for syncing media from a remote MediaWiki
     instance or instances, to a local server'''
+    EXTS = ['ai', 'aif', 'aiff', 'avi', 'dia', 'djvu', 'doc', 'dv',
+            'eps', 'gif', 'indd', 'inx', 'jpg', 'jpeg', 'mid', 'mov',
+            'odg', 'odp', 'ods', 'odt', 'ogg', 'ogv', 'omniplan', 'otf', 'ott',
+            'pdf', 'png', 'ppd', 'ppt', 'psd', 'stl', 'svg',
+            'wff2', 'webp', 'wmv', 'woff', 'xcf', 'xml', 'zip']
 
-    def __init__(self, config, active_projects, projects_todo, verbose=False, dryrun=False):
+    def __init__(self, config, active_projects, projects_todo,
+                 verbose=False, dryrun=False):
         '''
         configparser instance,
         dict of active projects,
+        foreign repo info,
         list of projects to actually operate on
         '''
         self.config = config
@@ -602,17 +613,144 @@ class Sync():
         around'''
         return
 
-    def get_new_media(self):
-        '''for each active project, get uploaded media that
+    def is_sane_mediafilename(self, filename):
+        '''because people can literally force any random string to appear
+        in the global image links table but using it in a gallery, let's
+        filter out the obvious cruft, make sure that the file has a known
+        good extension, etc.'''
+        good = False
+        to_check = filename.decode('utf-8')
+        if '/' in to_check or os.path.sep in to_check:
+            # fast fail
+            return False
+        for ext in Sync.EXTS:
+            if to_check.endswith('.' + ext):
+                good = True
+                break
+        if not good:
+            # no good ext
+            return False
+        # FIXME more sanity checks?
+        return True
+
+    def get_hashpath(self, filename, depth):
+        '''given a filename get the hashpath (x/yy(/zzz, etc)) for media storage
+        for mediawiki hashes 'depth' directories deep'''
+        summer = hashlib.md5()
+        summer.update(filename)
+        md5_hash = summer.hexdigest()
+        path = ''
+        for i in range(1, depth+1):
+            path = path + md5_hash[0:i] + '/'
+        return path.rstrip('/')
+
+    def get_media_download_url(self, file_toget, project, hashpath, upload_type):
+        '''get and return the url for downloading the original media
+        upload_type is local or foreignrepo'''
+        # https://upload.wikimedia.org/projecttype/langcode/hash/dir/filename
+
+        if upload_type == 'local':
+            # fixme we already get this in the caller
+            (projecttype, langcode) = self.local.active.get_projecttype_langcode(project)
+            projecturl = '{baseurl}/{ptype}/{lcode}'.format(
+                baseurl=self.config['uploaded_media_url'],
+                ptype=projecttype, lcode=langcode)
+        elif upload_type == 'foreignrepo':
+            projecturl = self.config['foreignrepo_media_url']
+        else:
+            # we have no idea what the caller wants
+            return None
+
+        url = '{projecturl}/{hashdirs}/{toget}'.format(
+            projecturl=projecturl, hashdirs=hashpath, toget=file_toget)
+        return url
+
+    def get_new_media_for_project(self, getter, download_basedir, repotype, project, maxgets,
+                                  toget_in, retr_out, fail_out):
+        '''
+        given file handle to list of files to retrieve,
+        file handles to where to log successful retrievals
+        and failures, get all the files, logging the results,
+        storing them appropriately
+        '''
+        gets = 0
+        while gets < maxgets:
+            gets += 1
+            toget_line = toget_in.readline()
+            if not toget_line:
+                # end of file
+                return
+            toget = toget_line.rstrip()
+            if not self.is_sane_mediafilename(toget):
+                continue
+            hashpath = self.get_hashpath(toget, 2)
+            url = self.get_media_download_url(toget.decode('utf-8'), project, hashpath, repotype)
+            localpath = os.path.join(download_basedir, hashpath, toget.decode('utf-8'))
+            resp_code = getter.get_file(url, localpath,
+                                        'failed to download media on ' + project + ' via ' + url,
+                                        return_on_fail=True)
+            if resp_code:
+                fail_out.write("'{filename}' [{code}] {url}\n".format(
+                    filename=toget, url=url, code=resp_code).encode('utf-8'))
+            else:
+                retr_out.write("'{filename}' {url}".format(filename=toget, url=url).encode('utf-8'))
+            time.sleep(self.config['http_wait'])
+
+    def get_new_media_from_list(self, getter, max_gets, repotype, files_toget, files_retrieved,
+                                files_failed):
+        '''for each project todo, get uploaded media that
         we don't have locally, up to some number (configured)
-        of items; then get foreign repo media for that project
-        we don't have locally, again up to some number (configured).
+        of items
         write all entries we retrieved to
-        filelists/date/projectname/projectname_retrieved
+        filelists/date/projectname/projectname_local_retrieved.gz
         write all entries we failed to retrieve after n retries, to
-        filelists/date/projectname/projectname_get_failed
+        filelists/date/projectname/projectname_local_get_failed.gz
         The point of limiting the number of retrievals is to
         do only so many at a time, before the next deletion run,
         in case there's been a long gap between runs and you're
         playing catch-up.'''
-        return
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                (projecttype, langcode) = self.local.active.get_projecttype_langcode(project)
+                download_basedir = os.path.join(self.config['mediadir'], projecttype, langcode)
+                if self.dryrun:
+                    print("would get files from {flist}, logs {failed} (failed), {ok} (ok)".format(
+                        flist=files_toget, failed=files_failed, ok=files_retrieved))
+                    return
+                with gzip.open(files_toget, "rb") as toget_in:
+                    with gzip.open(files_retrieved, "wb") as retr_out:
+                        with gzip.open(files_failed, "wb") as fail_out:
+                            self.get_new_media_for_project(
+                                getter, download_basedir, repotype, project,
+                                max_gets, toget_in, retr_out, fail_out)
+
+    def get_new_media(self):
+        '''
+        for each project todo, get uploaded and foreign
+        media that we don't have locally, up to some number (configured)
+        all successfull gets and all failures are logged to
+        (gzipped) files for reference
+        '''
+        getter = WebGetter(self.config, self.dryrun)
+        basedir = self.config['listsdir']
+        max_local_gets = self.config['max_uploaded_gets']
+        max_foreignrepo_gets = self.config['max_foreignrepo_gets']
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                local_files_retrieved = os.path.join(basedir, self.local.today, project,
+                                                     project + '_local_retrieved.gz')
+                local_files_failed = os.path.join(basedir, self.local.today, project,
+                                                  project + '_local_get_failed.gz')
+                local_files_toget = os.path.join(basedir, self.local.today, project,
+                                                 project + '-uploaded-toget.gz')
+                self.get_new_media_from_list(getter, max_local_gets, 'local', local_files_toget,
+                                             local_files_retrieved, local_files_failed)
+                foreignrepo_files_retrieved = os.path.join(basedir, self.local.today, project,
+                                                           project + '_foreignrepo-retrieved.gz')
+                foreignrepo_files_failed = os.path.join(basedir, self.local.today, project,
+                                                        project + '_foreignrepo_get_failed.gz')
+                foreignrepo_files_toget = os.path.join(basedir, self.local.today, project,
+                                                       project + '-foreignrepo-toget.gz')
+                self.get_new_media_from_list(
+                    getter, max_foreignrepo_gets, 'foreignrepo', foreignrepo_files_toget,
+                    foreignrepo_files_retrieved, foreignrepo_files_failed)

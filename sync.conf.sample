@@ -12,11 +12,13 @@ listsdir=
 # remote url for mediawiki api requests
 api_url=https://meta.wikimedia.org/w/api.php
 # base remote url for getting media uploaded/foreignrepo file lists
-# https://upload.wikimedia.org/projecttype/langcode/hash/dir/filename
-foreignrepo_media_url=https://upload.wikimedia.org/
+media_filelists_url=https://dumps.wikimedia.org/other/imageinfo
 # base remote url for getting new project-uploaded images
+# https://upload.wikimedia.org/projecttype/langcode/hash/dir/filename
+uploaded_media_url=https://upload.wikimedia.org
+# base remote url for getting new foreign repo images
 # https://upload.wikimedia.org/wikipedia/commons/hash/dir/filename
-uploaded_media_url=https://upload.wikimedia.org/wikipedia/commons/
+foreignrepo_media_url=https://upload.wikimedia.org/wikipedia/commons
 
 [limits]
 # time to wait between media download requests via the web
