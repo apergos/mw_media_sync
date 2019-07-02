@@ -33,6 +33,11 @@ repo.
 We still have to deal with timestamps for foreign repo files, which we don't have,
 so we can't compare versions.
 
+We overwrite log files if we run on a wiki more than once in a day. Maybe
+we should append. Gzip lets you just tack on a new file. Maybe we should
+use HH:MM timestamps instead. Maybe we should rotate. Anyways, we should
+do something...
+
 So, lots to do, even after a first kinda-working version is done.
 
 
