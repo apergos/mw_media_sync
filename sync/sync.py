@@ -7,6 +7,7 @@ import shutil
 import sys
 import time
 from subprocess import Popen, PIPE
+import urllib
 import requests
 
 
@@ -684,7 +685,11 @@ class Sync():
             if not self.is_sane_mediafilename(toget):
                 continue
             hashpath = self.get_hashpath(toget, 2)
-            url = self.get_media_download_url(toget.decode('utf-8'), project, hashpath, repotype)
+
+            # deal with silly things like % and other fun characters in the url
+            encoded_toget = urllib.parse.quote(toget.decode('utf-8'))
+            url = self.get_media_download_url(encoded_toget, project, hashpath, repotype)
+
             localpath = os.path.join(download_basedir, hashpath, toget.decode('utf-8'))
             resp_code = getter.get_file(url, localpath,
                                         'failed to download media on ' + project + ' via ' + url,
