@@ -474,10 +474,7 @@ class Sync():
         if we do, see if the timestamp is more recent than the timestamp
         in the uploaded files list. If our copy is older or is missing,
         add this file to the list of files to get from the local project:
-        filelists/date/projectname/projectname-uploaded-files-to-get.gz
-        Also add all files to
-        filelists/date/projectname/projectname-uploaded-files-to-keep,
-        we'll use that to figure out deletions later'''
+        filelists/date/projectname/projectname-uploaded-files-to-get.gz'''
         localfile = b""
         if self.dryrun:
             print("would write {outpath} from {localpath}, {uploadedpath}".format(
@@ -515,9 +512,7 @@ class Sync():
 
     def generate_uploaded_files_to_get(self):
         '''for each project to do, generate a list of uploaded files we
-        don't have locally, and write the list into a file for retrieval later.
-        Also write all uploaded files into a 'keep these' list, to be used
-        for managing deletions later.'''
+        don't have locally, and write the list into a file for retrieval later.'''
         basedir = self.config['listsdir']
         for project in self.active.projects:
             if project in self.projects_todo:
@@ -537,9 +532,7 @@ class Sync():
         if we don't, add this file to the list of files to get from the
         local project:
         filelists/date/projectname/projectname-foreignrepo-files-to-get.gz
-        Also add all files to
-        filelists/date/projectname/projectname-foreignrepo-files-to-keep,
-        we'll use that to figure out deletions later'''
+        '''
         localfile = b""
         if self.dryrun:
             print("would write {outpath} from {localpath}, {foreignrepopath}".format(
@@ -578,9 +571,6 @@ class Sync():
         If our copy is missing, add this file to the list of files to
         get from the foreign repo:
         filelists/date/projectname/projectname-foreignrepo-files-to-get.gz
-        Also add all files to
-        filelists/date/projectname/projectname-foreign-files-to-keep,
-        we'll use that to figure out deletions later
         NOTE that we might have an older copy than the remote server
         and we have no way to check for that at present. FIXME'''
         basedir = self.config['listsdir']
@@ -595,13 +585,40 @@ class Sync():
                 self.list_foreignrepo_files_toget_for_project(
                     local_files_list, foreignrepo_files_list, output_path)
 
-    def merge_sort_files_to_keep(self):
+    def merge_media_files_to_keep(self):
         '''for each active project, merge the lists of uploaded
         and foreignrepo media to keep, into one sorted list,
         which can later be compared with the sorted local list
         of media we have for the project, so that we can delete anything
         not on the remote server.'''
-        return
+        # we have two lists, <project>-uploads-sorted.gz which should contain
+        # everything project-uploaded we have or ought to have, and
+        # <project>-foreignrepo-sorted.gz which should contain everything
+        # foreign-repo-uploaded we have or ought to have for this project.
+        # SO, we should just be able to merge them into one file, which can
+        # be used to figure out what to delete.
+        # NOTE THAT the uploaded list has filename<whitespace>timestamp
+        # while the other one just has filename
+        # So when we use this file later we need to bear that in mind
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                basedir = os.path.join(self.config['listsdir'], self.local.today, project)
+                uploaded = os.path.join(basedir, project + '-uploads-sorted.gz')
+                foreign = os.path.join(basedir, project + '-foreignrepo-sorted.gz')
+                outpath = os.path.join(basedir, project + '-all-media-keep.gz')
+                sort_command = "sort -m <(gunzip -c {uploaded}) <(gunzip -c {foreign})".format(
+                    uploaded=uploaded, foreign=foreign)
+                command = sort_command + " | gzip > " + outpath
+                if self.dryrun:
+                    print("for project", project, "would merge media-to-keep into",
+                          outpath, 'with command:')
+                    print(command)
+                else:
+                    with Popen(command, shell=True, stderr=PIPE, executable='/bin/bash') as proc:
+                        _unused_output, errors = proc.communicate()
+                        if errors:
+                            print(errors.decode('utf-8').rstrip('\n'))
+                            return
 
     def delete_local_media_not_on_remote(self):
         '''for each active project, 'delete' all media not on the remote

@@ -264,7 +264,7 @@ def do_main():
     syncer.cleanup_project_foreignrepo_media_lists()
     syncer.generate_uploaded_files_to_get()
     syncer.generate_foreignrepo_files_to_get()
-    syncer.merge_sort_files_to_keep()
+    syncer.merge_media_files_to_keep()
     syncer.delete_local_media_not_on_remote()
     syncer.get_new_media()
 
