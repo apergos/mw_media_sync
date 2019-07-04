@@ -251,21 +251,54 @@ def do_main():
         print("active projects are:", ",".join(active_projects.keys()))
     local = LocalFiles(config, active_projects, args['projects_todo'],
                        args['verbose'], args['dryrun'])
+    if args['verbose']:
+        print("setting up local media subdirectories")
     local.init_mediadirs()
+    if args['verbose']:
+        print("archiving inactive projects")
     local.archive_inactive_projects()
+    if args['verbose']:
+        print("getting lists of local media")
     local.get_local_media_lists()
+    if args['verbose']:
+        print("sorting lists of local media")
     local.sort_local_media_lists()
 
     syncer = Sync(config, active_projects, args['projects_todo'],
                   args['verbose'], args['dryrun'])
+    if args['verbose']:
+        print("getting lists of media uploaded to projects")
     syncer.get_project_uploaded_media()
+    if args['verbose']:
+        print("getting lists of media uploaded to foreign repo")
     syncer.get_project_foreignrepo_media()
+
+    if args['verbose']:
+        print("cleaning up lists of media uploaded to projects")
     syncer.cleanup_project_uploaded_media_lists()
+    if args['verbose']:
+        print("cleaning up lists of media uploaded to foreign repo")
     syncer.cleanup_project_foreignrepo_media_lists()
+
+    if args['verbose']:
+        print("generating list of project-uploaded media to get")
     syncer.generate_uploaded_files_to_get()
+    if args['verbose']:
+        print("generating list of foreign repo-uploaded media to get")
     syncer.generate_foreignrepo_files_to_get()
+
+    if args['verbose']:
+        print("creating list of media to keep locally")
     syncer.merge_media_files_to_keep()
+    if args['verbose']:
+        print("generating list of local media not on remote project")
+    syncer.list_local_media_not_on_remote()
+    if args['verbose']:
+        print("deleting local media not on remote project")
     syncer.delete_local_media_not_on_remote()
+
+    if args['verbose']:
+        print("downloading new media from remote")
     syncer.get_new_media()
 
 

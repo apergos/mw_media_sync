@@ -70,6 +70,14 @@ class ActiveProjects():
     '''keeping track of and manipulating the list of projects
     active on the remote end'''
 
+    @staticmethod
+    def active(project):
+        '''if the project name has a '/' in it, it's not active. it means
+        we didn't find it in the list of projects on the remote host,
+        no dbname, all we have are the projecttype and the langcode and
+        we codged together a so-called project name out of that.'''
+        return not bool('/' in project)
+
     def __init__(self, active_projects):
         '''
         arg: dict of active projects
@@ -109,13 +117,6 @@ class ActiveProjects():
             projecttype = self.projects[project]['projecttype']
             langcode = self.projects[project]['langcode']
         return (projecttype, langcode)
-
-    def active(self, project):
-        '''if the project name has a '/' in it, it's not active. it means
-        we didn't find it in the list of projects on the remote host,
-        no dbname, all we have are the projecttype and the langcode and
-        we codged together a so-called project name out of that.'''
-        return not bool('/' in project)
 
 
 class LocalFiles():
@@ -258,7 +259,7 @@ class LocalFiles():
         basedir = os.path.join(self.config['listsdir'], date, project)
         outputpath = os.path.join(basedir, project + '_local_media_sorted.gz')
         inputpath = os.path.join(basedir, project + '_local_media.gz')
-        command = "zcat {infile} | sort -k 1 -S 70% | gzip > {outfile}".format(
+        command = "zcat {infile} | LC_ALL=C sort -k 1 -S 70% | gzip > {outfile}".format(
             infile=inputpath, outfile=outputpath)
         if self.dryrun:
             print("for project", project, "would sort media into", outputpath, 'with command:')
@@ -326,6 +327,39 @@ class Sync():
             'odg', 'odp', 'ods', 'odt', 'ogg', 'ogv', 'omniplan', 'otf', 'ott',
             'pdf', 'png', 'ppd', 'ppt', 'psd', 'stl', 'svg',
             'wff2', 'webp', 'wmv', 'woff', 'xcf', 'xml', 'zip']
+
+    @staticmethod
+    def is_sane_mediafilename(filename):
+        '''because people can literally force any random string to appear
+        in the global image links table but using it in a gallery, let's
+        filter out the obvious cruft, make sure that the file has a known
+        good extension, etc.'''
+        good = False
+        to_check = filename.decode('utf-8')
+        if '/' in to_check or os.path.sep in to_check:
+            # fast fail
+            return False
+        for ext in Sync.EXTS:
+            if to_check.endswith('.' + ext):
+                good = True
+                break
+        if not good:
+            # no good ext
+            return False
+        # FIXME more sanity checks?
+        return True
+
+    @staticmethod
+    def get_hashpath(filename, depth):
+        '''given a filename get the hashpath (x/yy(/zzz, etc)) for media storage
+        for mediawiki hashes 'depth' directories deep'''
+        summer = hashlib.md5()
+        summer.update(filename)
+        md5_hash = summer.hexdigest()
+        path = ''
+        for i in range(1, depth+1):
+            path = path + md5_hash[0:i] + '/'
+        return path.rstrip('/')
 
     def __init__(self, config, active_projects, projects_todo,
                  verbose=False, dryrun=False):
@@ -405,7 +439,7 @@ class Sync():
     def remove_first_line_sort(self, inpath, outpath):
         '''remove first line of contents of gzipped input file, gzip,
         write to output file'''
-        command = "zcat {infile} | tail -n +2 | sort -k 1 -S 70% | gzip > {outfile}".format(
+        command = "zcat {infile} | tail -n +2 | LC_ALL=C sort -k 1 -S 70% | uniq | gzip > {outfile}".format(
             infile=inpath, outfile=outpath)
         if self.dryrun:
             print("would filter/sort media list", inpath, "into", outpath, 'with command:')
@@ -606,7 +640,7 @@ class Sync():
                 uploaded = os.path.join(basedir, project + '-uploads-sorted.gz')
                 foreign = os.path.join(basedir, project + '-foreignrepo-sorted.gz')
                 outpath = os.path.join(basedir, project + '-all-media-keep.gz')
-                sort_command = "sort -m <(gunzip -c {uploaded}) <(gunzip -c {foreign})".format(
+                sort_command = "LC_ALL=C sort -m <(gunzip -c {uploaded}) <(gunzip -c {foreign})".format(
                     uploaded=uploaded, foreign=foreign)
                 command = sort_command + " | gzip > " + outpath
                 if self.dryrun:
@@ -620,6 +654,47 @@ class Sync():
                             print(errors.decode('utf-8').rstrip('\n'))
                             return
 
+    def list_local_media_not_on_remote(self):
+        '''for each project to do, list all media not on the remote
+        server (either as project upload or in foreign repo and used
+        by the project)'''
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                basedir = os.path.join(self.config['listsdir'], self.local.today, project)
+                keeps_list = os.path.join(basedir, project + '-all-media-keep.gz')
+                haves_list = os.path.join(basedir, project + '_local_media_sorted.gz')
+                deletes_list = os.path.join(basedir, project + '-all-media-delete.gz')
+                if self.dryrun:
+                    print("would write {deletes} from {keeps}, {haves}".format(
+                        deletes=deletes_list, keeps=keeps_list, haves=haves_list))
+                    return
+                if self.verbose:
+                    print("writing {deletes} from {keeps}, {haves}".format(
+                        deletes=deletes_list, keeps=keeps_list, haves=haves_list))
+                with gzip.open(keeps_list, "rb") as keeps:
+                    with gzip.open(haves_list, "rb") as haves:
+                        with gzip.open(deletes_list, "wb") as deletes:
+                            keep = None
+                            keeps_eof = False
+                            while True:
+                                have_line = haves.readline()
+                                if not have_line:
+                                    # done
+                                    return
+                                have = have_line.split()[0]
+                                while (keep is None or keep < have) and not keeps_eof:
+                                    keep_line = keeps.readline()
+                                    if not keep_line:
+                                        keeps_eof = True
+                                        break
+                                    # some entries in here look like
+                                    # LettertoDefenceMinister.pdf	20070115045609
+                                    # because they are from a query against the image table
+                                    keep = keep_line.split()[0]
+                                if keeps_eof or keep > have:
+                                    # not in the keep list. delete!
+                                    deletes.write(have_line)
+
     def delete_local_media_not_on_remote(self):
         '''for each active project, 'delete' all media not on the remote
         server (either as project upload or in foreign repo and used
@@ -630,37 +705,6 @@ class Sync():
         overwritten, we do not keep more than one deleted version
         around'''
         return
-
-    def is_sane_mediafilename(self, filename):
-        '''because people can literally force any random string to appear
-        in the global image links table but using it in a gallery, let's
-        filter out the obvious cruft, make sure that the file has a known
-        good extension, etc.'''
-        good = False
-        to_check = filename.decode('utf-8')
-        if '/' in to_check or os.path.sep in to_check:
-            # fast fail
-            return False
-        for ext in Sync.EXTS:
-            if to_check.endswith('.' + ext):
-                good = True
-                break
-        if not good:
-            # no good ext
-            return False
-        # FIXME more sanity checks?
-        return True
-
-    def get_hashpath(self, filename, depth):
-        '''given a filename get the hashpath (x/yy(/zzz, etc)) for media storage
-        for mediawiki hashes 'depth' directories deep'''
-        summer = hashlib.md5()
-        summer.update(filename)
-        md5_hash = summer.hexdigest()
-        path = ''
-        for i in range(1, depth+1):
-            path = path + md5_hash[0:i] + '/'
-        return path.rstrip('/')
 
     def get_media_download_url(self, file_toget, project, hashpath, upload_type):
         '''get and return the url for downloading the original media

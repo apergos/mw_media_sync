@@ -2,19 +2,13 @@ This approach is very inefficient, downloading and processing the same files
 again although we already have them, either for an earlier run today or a previous
 run. Keeping track of the most recent files, doing HEAD requests would be nice.
 
-We need to filter out dups from the gil report (foreign repo list) so we don't
-download them more than once.
+Separate sessions for each download so we are not keeping a connection tied
+up on these servers. Do we want to batch a few downloads at a time or is
+being nice to the remote host priority?
 
-separate sessions for each download so we are not keeping a connection tied
-up on these servers. Slower for us but who cares.
-
-No prep for deletion done yet.
-
-See if request module needs urlencoding of stuff in the url it's passed (for
-downloading media files)
-
-Be prepared to try to download a bunch of stuff that doesn't exist (see
-notes.txt for this), find a nice way to handle these cases
+Be prepared to try to download a bunch of stuff that doesn't exist (because links
+in a gallery on a project can contain anything and those things may not actually
+be existing files); find a nice way to handle these cases.
 
 Once we have deleted all downloaded files not in use any more on the remote side,
 we should be able to keep some sort of diff, 'here are new files on the remote
@@ -33,10 +27,9 @@ repo.
 We still have to deal with timestamps for foreign repo files, which we don't have,
 so we can't compare versions.
 
-We overwrite log files if we run on a wiki more than once in a day. Maybe
-we should append. Gzip lets you just tack on a new file. Maybe we should
-use HH:MM timestamps instead. Maybe we should rotate. Anyways, we should
-do something...
+We overwrite log files if we run on a wiki more than once in a day. Maybe we should
+append. Gzip lets you just tack on a new file. Maybe we should use HH:MM timestamps
+instead. Maybe we should rotate. Anyways, we should do something...
 
 So, lots to do, even after a first kinda-working version is done.
 
