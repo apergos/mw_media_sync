@@ -6,7 +6,7 @@ import os
 import urllib
 import sys
 import requests
-from sync.sync import Sync, WebGetter, LocalFiles
+from sync.sync import Sync, WebGetter, ListsGetter, LocalFiles, ListsMaker
 
 
 CONFIG_SECTIONS = {'dirs': ['mediadir', 'archivedir', 'listsdir'],
@@ -238,17 +238,10 @@ def exclude_foreign_repo(config, active_projects):
             active_projects.pop(config['foreignrepo'], None)
 
 
-def do_main():
-    '''entry point'''
-    args = get_args()
-    config = get_config(args['configfile'])
-    validate_config(config)
-    merge_config(config, args)
-
-    active_projects = get_active_projects(config, args['dryrun'])
-    exclude_foreign_repo(config, active_projects)
-    if args['verbose']:
-        print("active projects are:", ",".join(active_projects.keys()))
+def do_localmedia_prep(args, config, active_projects):
+    '''do all the things to local media we want
+    to do before sync (archive old crap, list out what
+    we have that's good, etc)'''
     local = LocalFiles(config, active_projects, args['projects_todo'],
                        args['verbose'], args['dryrun'])
     if args['verbose']:
@@ -264,35 +257,54 @@ def do_main():
         print("sorting lists of local media")
     local.sort_local_media_lists()
 
-    syncer = Sync(config, active_projects, args['projects_todo'],
-                  args['verbose'], args['dryrun'])
+
+def do_lists_retrieval(args, config, active_projects):
+    '''get all the lists of media we need from the
+    remote host'''
+    getter = ListsGetter(config, active_projects, args['projects_todo'],
+                         args['verbose'], args['dryrun'])
+
     if args['verbose']:
         print("getting lists of media uploaded to projects")
-    syncer.get_project_uploaded_media()
+    getter.get_project_uploaded_media()
     if args['verbose']:
         print("getting lists of media uploaded to foreign repo")
-    syncer.get_project_foreignrepo_media()
+    getter.get_project_foreignrepo_media()
+
+
+def do_lists_generation(args, config, active_projects):
+    '''generate all the lists of media we need: media to delete,
+    media to retrieve, etc'''
+    maker = ListsMaker(config, active_projects, args['projects_todo'],
+                       args['verbose'], args['dryrun'])
 
     if args['verbose']:
         print("cleaning up lists of media uploaded to projects")
-    syncer.cleanup_project_uploaded_media_lists()
+    maker.cleanup_project_uploaded_media_lists()
     if args['verbose']:
         print("cleaning up lists of media uploaded to foreign repo")
-    syncer.cleanup_project_foreignrepo_media_lists()
+    maker.cleanup_project_foreignrepo_media_lists()
 
     if args['verbose']:
         print("generating list of project-uploaded media to get")
-    syncer.generate_uploaded_files_to_get()
+    maker.generate_uploaded_files_to_get()
     if args['verbose']:
         print("generating list of foreign repo-uploaded media to get")
-    syncer.generate_foreignrepo_files_to_get()
+    maker.generate_foreignrepo_files_to_get()
 
     if args['verbose']:
         print("creating list of media to keep locally")
-    syncer.merge_media_files_to_keep()
+    maker.merge_media_files_to_keep()
     if args['verbose']:
         print("generating list of local media not on remote project")
-    syncer.list_local_media_not_on_remote()
+    maker.list_local_media_not_on_remote()
+
+
+def do_sync(args, config, active_projects):
+    '''retrieve media from remote, delete crap we don't need'''
+    syncer = Sync(config, active_projects, args['projects_todo'],
+                  args['verbose'], args['dryrun'])
+
     if args['verbose']:
         print("deleting local media not on remote project")
     syncer.delete_local_media_not_on_remote()
@@ -300,6 +312,24 @@ def do_main():
     if args['verbose']:
         print("downloading new media from remote")
     syncer.get_new_media()
+
+
+def do_main():
+    '''entry point'''
+    args = get_args()
+    config = get_config(args['configfile'])
+    validate_config(config)
+    merge_config(config, args)
+
+    active_projects = get_active_projects(config, args['dryrun'])
+    exclude_foreign_repo(config, active_projects)
+    if args['verbose']:
+        print("active projects are:", ",".join(active_projects.keys()))
+
+    do_localmedia_prep(args, config, active_projects)
+    do_lists_retrieval(args, config, active_projects)
+    do_lists_generation(args, config, active_projects)
+    do_sync(args, config, active_projects)
 
 
 if __name__ == '__main__':

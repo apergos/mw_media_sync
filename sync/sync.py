@@ -139,18 +139,18 @@ class LocalFiles():
         self.dryrun = dryrun
 
     def init_hashdirs(self, basedir):
-            # all the hashdirs
-            hexdigits = '0123456789abcdef'
-            hexdigits_split = list(hexdigits)
-            for first_digit in hexdigits_split:
-                for ending in hexdigits_split:
-                    subdir = os.path.join(
-                        basedir, first_digit, first_digit + ending)
-                    if not os.path.exists(subdir):
-                        if self.dryrun:
-                            print("would make directory(ies):", subdir)
-                        else:
-                            os.makedirs(subdir)
+        # all the hashdirs
+        hexdigits = '0123456789abcdef'
+        hexdigits_split = list(hexdigits)
+        for first_digit in hexdigits_split:
+            for ending in hexdigits_split:
+                subdir = os.path.join(
+                    basedir, first_digit, first_digit + ending)
+                if not os.path.exists(subdir):
+                    if self.dryrun:
+                        print("would make directory(ies):", subdir)
+                    else:
+                        os.makedirs(subdir)
 
     def init_mediadirs(self):
         '''if there is no local basedir for media, or if
@@ -322,48 +322,9 @@ class LocalFiles():
                 self.sort_local_media_for_project(project)
 
 
-class Sync():
-    '''methods for syncing media from a remote MediaWiki
-    instance or instances, to a local server'''
-    EXTS = ['ai', 'aif', 'aiff', 'avi', 'dia', 'djvu', 'doc', 'dv',
-            'eps', 'gif', 'indd', 'inx', 'jpg', 'jpeg', 'mid', 'mov',
-            'odg', 'odp', 'ods', 'odt', 'ogg', 'ogv', 'omniplan', 'otf', 'ott',
-            'pdf', 'png', 'ppd', 'ppt', 'psd', 'stl', 'svg',
-            'wff2', 'webp', 'wmv', 'woff', 'xcf', 'xml', 'zip']
-
-    @staticmethod
-    def is_sane_mediafilename(filename):
-        '''because people can literally force any random string to appear
-        in the global image links table but using it in a gallery, let's
-        filter out the obvious cruft, make sure that the file has a known
-        good extension, etc.'''
-        good = False
-        to_check = filename.decode('utf-8')
-        if '/' in to_check or os.path.sep in to_check:
-            # fast fail
-            return False
-        for ext in Sync.EXTS:
-            if to_check.endswith('.' + ext):
-                good = True
-                break
-        if not good:
-            # no good ext
-            return False
-        # FIXME more sanity checks?
-        return True
-
-    @staticmethod
-    def get_hashpath(filename, depth):
-        '''given a filename get the hashpath (x/yy(/zzz, etc)) for media storage
-        for mediawiki hashes 'depth' directories deep'''
-        summer = hashlib.md5()
-        summer.update(filename)
-        md5_hash = summer.hexdigest()
-        path = ''
-        for i in range(1, depth+1):
-            path = path + md5_hash[0:i] + '/'
-        return path.rstrip('/')
-
+class ListsGetter():
+    '''methods to retrieve various lists of media files per project
+    from remote location'''
     def __init__(self, config, active_projects, projects_todo,
                  verbose=False, dryrun=False):
         '''
@@ -438,6 +399,28 @@ class Sync():
         to do'''
         error = 'Failed to retrieve list of foreign repo media for project: '
         self.get_project_remote_media('{project}-{date}-remote-wikiqueries.gz', error)
+
+
+class ListsMaker():
+    '''methods to generate lists of media files we need: media to delete,
+    to keep, to download'''
+    def __init__(self, config, active_projects, projects_todo,
+                 verbose=False, dryrun=False):
+        '''
+        configparser instance,
+        dict of active projects,
+        foreign repo info,
+        list of projects to actually operate on
+        '''
+        self.config = config
+        self.active = ActiveProjects(active_projects)
+        self.projects_todo = None
+        if projects_todo:
+            self.projects_todo = [project for project in projects_todo
+                                  if project in active_projects]
+        self.local = LocalFiles(config, active_projects, projects_todo, verbose, dryrun)
+        self.verbose = verbose
+        self.dryrun = dryrun
 
     def remove_first_line_sort(self, inpath, outpath):
         '''remove first line of contents of gzipped input file, gzip,
@@ -697,6 +680,67 @@ class Sync():
                                 if keeps_eof or keep > have:
                                     # not in the keep list. delete!
                                     deletes.write(have_line)
+
+
+class Sync():
+    '''methods for syncing media from a remote MediaWiki
+    instance or instances, to a local server'''
+    EXTS = ['ai', 'aif', 'aiff', 'avi', 'dia', 'djvu', 'doc', 'dv',
+            'eps', 'gif', 'indd', 'inx', 'jpg', 'jpeg', 'mid', 'mov',
+            'odg', 'odp', 'ods', 'odt', 'ogg', 'ogv', 'omniplan', 'otf', 'ott',
+            'pdf', 'png', 'ppd', 'ppt', 'psd', 'stl', 'svg',
+            'wff2', 'webp', 'wmv', 'woff', 'xcf', 'xml', 'zip']
+
+    @staticmethod
+    def is_sane_mediafilename(filename):
+        '''because people can literally force any random string to appear
+        in the global image links table but using it in a gallery, let's
+        filter out the obvious cruft, make sure that the file has a known
+        good extension, etc.'''
+        good = False
+        to_check = filename.decode('utf-8')
+        if '/' in to_check or os.path.sep in to_check:
+            # fast fail
+            return False
+        for ext in Sync.EXTS:
+            if to_check.endswith('.' + ext):
+                good = True
+                break
+        if not good:
+            # no good ext
+            return False
+        # FIXME more sanity checks?
+        return True
+
+    @staticmethod
+    def get_hashpath(filename, depth):
+        '''given a filename get the hashpath (x/yy(/zzz, etc)) for media storage
+        for mediawiki hashes 'depth' directories deep'''
+        summer = hashlib.md5()
+        summer.update(filename)
+        md5_hash = summer.hexdigest()
+        path = ''
+        for i in range(1, depth+1):
+            path = path + md5_hash[0:i] + '/'
+        return path.rstrip('/')
+
+    def __init__(self, config, active_projects, projects_todo,
+                 verbose=False, dryrun=False):
+        '''
+        configparser instance,
+        dict of active projects,
+        foreign repo info,
+        list of projects to actually operate on
+        '''
+        self.config = config
+        self.active = ActiveProjects(active_projects)
+        self.projects_todo = None
+        if projects_todo:
+            self.projects_todo = [project for project in projects_todo
+                                  if project in active_projects]
+        self.local = LocalFiles(config, active_projects, projects_todo, verbose, dryrun)
+        self.verbose = verbose
+        self.dryrun = dryrun
 
     def delete_local_media_not_on_remote(self):
         '''for each project todo, 'delete' all media not on the remote
