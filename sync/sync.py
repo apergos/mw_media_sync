@@ -138,6 +138,20 @@ class LocalFiles():
         self.verbose = verbose
         self.dryrun = dryrun
 
+    def init_hashdirs(self, basedir):
+            # all the hashdirs
+            hexdigits = '0123456789abcdef'
+            hexdigits_split = list(hexdigits)
+            for first_digit in hexdigits_split:
+                for ending in hexdigits_split:
+                    subdir = os.path.join(
+                        basedir, first_digit, first_digit + ending)
+                    if not os.path.exists(subdir):
+                        if self.dryrun:
+                            print("would make directory(ies):", subdir)
+                        else:
+                            os.makedirs(subdir)
+
     def init_mediadirs(self):
         '''if there is no local basedir for media, or if
         any active project dir underneath it does not exist,
@@ -147,22 +161,11 @@ class LocalFiles():
         projects_todo = self.active.projects.keys()
         if self.projects_todo:
             projects_todo = self.projects_todo
-
         for project in projects_todo:
-            # all the hashdirs
-            hexdigits = '0123456789abcdef'
-            hexdigits_split = list(hexdigits)
-            for first_digit in hexdigits_split:
-                for ending in hexdigits_split:
-                    subdir = os.path.join(basedir,
-                                          self.active.projects[project]['projecttype'],
-                                          self.active.projects[project]['langcode'],
-                                          first_digit, first_digit + ending)
-                    if not os.path.exists(subdir):
-                        if self.dryrun:
-                            print("would make directory(ies):", subdir)
-                        else:
-                            os.makedirs(subdir)
+            project_dir = os.path.join(basedir,
+                                       self.active.projects[project]['projecttype'],
+                                       self.active.projects[project]['langcode'])
+            self.init_hashdirs(project_dir)
 
     def archive_inactive_projects(self):
         '''if a local directory references a project that
@@ -696,15 +699,46 @@ class Sync():
                                     deletes.write(have_line)
 
     def delete_local_media_not_on_remote(self):
-        '''for each active project, 'delete' all media not on the remote
+        '''for each project todo, 'delete' all media not on the remote
         server (either as project upload or in foreign repo and used
         by the project)
         'deleted' media will be moved to
         archive/deleted/projecttype/langcode/hashdir/imagename
         if there is already an file in that location, it will be
         overwritten, we do not keep more than one deleted version
-        around'''
-        return
+        around
+        folks who want to permanently remove such images can
+        periodically clean out the archive/deleted directory'''
+        for project in self.active.projects:
+            if project in self.projects_todo:
+                basedir = os.path.join(self.config['listsdir'], self.local.today, project)
+                deletes_list = os.path.join(basedir, project + '-all-media-delete.gz')
+                (projecttype, langcode) = self.local.active.get_projecttype_langcode(project)
+                archived_deletes_dir = os.path.join(self.config['archivedir'], 'deleted',
+                                                    projecttype, langcode)
+                if self.dryrun:
+                    print("would move entries in {deletes} to {archived} ".format(
+                        deletes=deletes_list, archived=archived_deletes_dir))
+                    return
+                if not os.path.exists(archived_deletes_dir):
+                    os.makedirs(archived_deletes_dir)
+                    self.local.init_hashdirs(archived_deletes_dir)
+                if self.verbose:
+                    print("moving entries in {deletes} to {archived} ".format(
+                        deletes=deletes_list, archived=archived_deletes_dir))
+                with gzip.open(deletes_list, "rb") as deletes:
+                    while True:
+                        delete_line = deletes.readline()
+                        if not delete_line:
+                            # eof
+                            return
+                        filename = delete_line.rstrip().split()[0]
+                        hashpath = self.get_hashpath(filename, 2)
+                        old_path = os.path.join(self.config['mediadir'], projecttype, langcode,
+                                                hashpath, filename.decode('utf-8'))
+                        new_path = os.path.join(archived_deletes_dir,
+                                                hashpath, filename.decode('utf-8'))
+                        shutil.move(old_path, new_path)
 
     def get_media_download_url(self, file_toget, project, hashpath, upload_type):
         '''get and return the url for downloading the original media

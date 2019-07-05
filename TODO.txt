@@ -31,6 +31,11 @@ We overwrite log files if we run on a wiki more than once in a day. Maybe we sho
 append. Gzip lets you just tack on a new file. Maybe we should use HH:MM timestamps
 instead. Maybe we should rotate. Anyways, we should do something...
 
+We might try to download the same nonexistent links on every run. What should
+we do about that? It's possible the files will be there the next time (someone
+might have uploaded them). Should we could them against the max num to download?
+Should we refuse to retry failures for some number of runs (configurable)?
+
 So, lots to do, even after a first kinda-working version is done.
 
 
