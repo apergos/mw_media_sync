@@ -1,12 +1,10 @@
 #!/usr/bin/python3
 import configparser
 import getopt
-import json
 import os
 import urllib
 import sys
-import requests
-from sync.sync import Sync, WebGetter, ListsGetter, LocalFiles, ListsMaker
+from sync.sync import Sync, ListsGetter, LocalFiles, ListsMaker, Projects
 
 
 CONFIG_SECTIONS = {'dirs': ['mediadir', 'archivedir', 'listsdir'],
@@ -175,59 +173,6 @@ def merge_config(config, args):
         config['http_wait'] = args['retries']
 
 
-def get_projecttype_from_url(url):
-    '''give an url blah.wikisomething.org, dig the wikisomething
-    piece out and return it. yes it stinks.'''
-    # https://si.wikipedia.org
-    return url.rsplit('.', 2)[1]
-
-
-def get_active_projects(config, dryrun):
-    '''get list of active projects from remote MediaWiki
-    via the api, convert it to a dict of entries with key the dbname
-    and containing projecttype, langcode for each wiki, and return it'''
-
-    baseurl = (config['api_url'])
-    params = {'action': 'sitematrix', 'format': 'json'}
-    sess = requests.Session()
-    sess.headers.update(
-        {"User-Agent": config['agent'], "Accept": "application/json"})
-    getter = WebGetter(config, dryrun=dryrun)
-    errors = 'Failed to retrieve list of active projects'
-    content = getter.get_content(baseurl, errors, session=sess, params=params)
-
-    siteinfo = json.loads(content)
-    active_projects = {}
-    for sitegroup in siteinfo['sitematrix']:
-        if sitegroup == 'specials':
-            for site in siteinfo['sitematrix'][sitegroup]:
-                active_projects[site['dbname']] = {
-                    'projecttype': get_projecttype_from_url(site['url']),
-                    'langcode': site['code']}
-            continue
-
-        # there is a 'count' entry which doesn't have site info. might be others too.
-        try:
-            if 'site' in siteinfo['sitematrix'][sitegroup]:
-                # sitegroup is 266:
-                # '266': {'code': 'tk', 'name': 'Türkmençe', 'site':
-                # [{'url': 'https://tk.wikipedia.org', 'dbname': 'tkwiki',
-                #   'code': 'wiki', 'sitename': 'Wikipediýa'},
-                #  {'url': 'https://tk.wiktionary.org', 'dbname': 'tkwiktionary',
-                #   'code': 'wiktionary', 'sitename': 'Wikisözlük'},
-                #  {'url': 'https://tk.wikibooks.org', 'dbname': 'tkwikibooks',
-                #   'code': 'wikibooks', 'sitename': 'Wikibooks', 'closed': ''},
-                #  {'url': 'https://tk.wikiquote.org', 'dbname': 'tkwikiquote',
-                #   'code': 'wikiquote', 'sitename': 'Wikiquote', 'closed': ''}]
-                for site in siteinfo['sitematrix'][sitegroup]['site']:
-                    active_projects[site['dbname']] = {
-                        'projecttype': get_projecttype_from_url(site['url']),
-                        'langcode': siteinfo['sitematrix'][sitegroup]['code']}
-        except TypeError:
-            continue
-    return active_projects
-
-
 def exclude_foreign_repo(config, active_projects):
     '''toss the foreign repo from the list of active
     projects. We won't mirror all that content!
@@ -238,12 +183,11 @@ def exclude_foreign_repo(config, active_projects):
             active_projects.pop(config['foreignrepo'], None)
 
 
-def do_localmedia_prep(args, config, active_projects):
+def do_localmedia_prep(args, config, projects):
     '''do all the things to local media we want
     to do before sync (archive old crap, list out what
     we have that's good, etc)'''
-    local = LocalFiles(config, active_projects, args['projects_todo'],
-                       args['verbose'], args['dryrun'])
+    local = LocalFiles(config, projects, args['verbose'], args['dryrun'])
     if args['verbose']:
         print("setting up local media subdirectories")
     local.init_mediadirs()
@@ -258,11 +202,10 @@ def do_localmedia_prep(args, config, active_projects):
     local.sort_local_media_lists()
 
 
-def do_lists_retrieval(args, config, active_projects):
+def do_lists_retrieval(args, config, projects):
     '''get all the lists of media we need from the
     remote host'''
-    getter = ListsGetter(config, active_projects, args['projects_todo'],
-                         args['verbose'], args['dryrun'])
+    getter = ListsGetter(config, projects, args['verbose'], args['dryrun'])
 
     if args['verbose']:
         print("getting lists of media uploaded to projects")
@@ -272,11 +215,10 @@ def do_lists_retrieval(args, config, active_projects):
     getter.get_project_foreignrepo_media()
 
 
-def do_lists_generation(args, config, active_projects):
+def do_lists_generation(args, config, projects):
     '''generate all the lists of media we need: media to delete,
     media to retrieve, etc'''
-    maker = ListsMaker(config, active_projects, args['projects_todo'],
-                       args['verbose'], args['dryrun'])
+    maker = ListsMaker(config, projects, args['verbose'], args['dryrun'])
 
     if args['verbose']:
         print("cleaning up lists of media uploaded to projects")
@@ -300,10 +242,9 @@ def do_lists_generation(args, config, active_projects):
     maker.list_local_media_not_on_remote()
 
 
-def do_sync(args, config, active_projects):
+def do_sync(args, config, projects):
     '''retrieve media from remote, delete crap we don't need'''
-    syncer = Sync(config, active_projects, args['projects_todo'],
-                  args['verbose'], args['dryrun'])
+    syncer = Sync(config, projects, args['verbose'], args['dryrun'])
 
     if args['verbose']:
         print("deleting local media not on remote project")
@@ -321,15 +262,14 @@ def do_main():
     validate_config(config)
     merge_config(config, args)
 
-    active_projects = get_active_projects(config, args['dryrun'])
-    exclude_foreign_repo(config, active_projects)
+    projects = Projects(config, args['projects_todo'], args['dryrun'])
     if args['verbose']:
-        print("active projects are:", ",".join(active_projects.keys()))
+        print("active projects are:", ",".join(projects.active.keys()))
 
-    do_localmedia_prep(args, config, active_projects)
-    do_lists_retrieval(args, config, active_projects)
-    do_lists_generation(args, config, active_projects)
-    do_sync(args, config, active_projects)
+    do_localmedia_prep(args, config, projects)
+    do_lists_retrieval(args, config, projects)
+    do_lists_generation(args, config, projects)
+    do_sync(args, config, projects)
 
 
 if __name__ == '__main__':
