@@ -754,6 +754,39 @@ class ListsMaker():
                                     # not in the keep list. delete!
                                     deletes.write(have_line)
 
+    def list_media_gone_from_remote(self):
+        '''
+        if there is a previous list of <project>-all-media-keep.gz, compare the current
+        list to the most recent such list, and generate a list of media that is no longer
+        on the remote, and therefore should be deleted by us.
+        this can be called instead of generating a local list of all media and figuring
+        out deletes from that, in the case there is a previous remotes media list. It
+        will save a lot of stat calls.
+        '''
+        return
+
+    def list_new_uploaded_media_on_remote(self):
+        '''
+        if there is a previous list of <project>-uploads-sorted.gz, compare the current
+        list to the most recent such list, and generate a list of media that is new on
+        the remote, uploaded to the project, and therefore should be downloaded by us.
+        this can be called instead of generating a local list of all media and figuring
+        out downloads from that, in the case there is a previous remotes media list. It
+        will save a lot of stat calls.
+        '''
+        return
+
+    def list_new_foreign_media_on_remote(self):
+        '''
+        if there is a previous list of <project>-foreignrepo-sorted.gz, compare the current
+        list to the most recent such list, and generate a list of media that is new on
+        the remote, uploaded to the foreign repo, and therefore should be downloaded by us.
+        this can be called instead of generating a local list of all media and figuring
+        out downloads from that, in the case there is a previous remotes media list. It
+        will save a lot of stat calls.
+        '''
+        return
+
 
 class Sync():
     '''methods for syncing media from a remote MediaWiki
