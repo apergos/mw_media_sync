@@ -237,6 +237,15 @@ def do_lists_generation(args, config, projects):
     if args['verbose']:
         print("creating list of media to keep locally")
     maker.merge_media_files_to_keep()
+
+    lists_by_date = maker.get_most_recent()
+    if args['verbose']:
+        print(lists_by_date)
+
+    if args['verbose']:
+        print("generating list of remote media gone since last run")
+    maker.list_media_gone_from_remote(lists_by_date)
+
     if args['verbose']:
         print("generating list of local media not on remote project")
     maker.list_local_media_not_on_remote()

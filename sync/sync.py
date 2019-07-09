@@ -484,6 +484,20 @@ class ListsMaker():
         fields = line.rstrip().split()
         return(fields[0], fields[1])
 
+    @staticmethod
+    def get_most_recent_file(project, filename, most_recent_lists):
+        '''
+        for a specific list file (with project name removed),
+        find the date of the most recent version and return it,
+        or None if there is no such file
+        '''
+        if project in most_recent_lists:
+            dates = sorted(most_recent_lists[project].keys(), reverse=True)
+            for date in dates:
+                if filename in most_recent_lists[project][date]:
+                    return date
+        return None
+
     def __init__(self, config, projects, verbose=False, dryrun=False):
         '''
         configparser instance,
@@ -754,8 +768,68 @@ class ListsMaker():
                                     # not in the keep list. delete!
                                     deletes.write(have_line)
 
-    def list_media_gone_from_remote(self):
+    def get_most_recent(self):
         '''
+        for all lists,
+        find the most recent date each file was produced for each project,
+        excluding today's run,
+        creating a dict of projects vs dates, and returning the dict,
+        or None if no list files have never been written
+        '''
+        list_date_info = {}
+        date = None
+        basedir = self.config['listsdir']
+        dates = os.listdir(basedir)
+        dates = [date for date in dates if len(date) == 8 and date.isdigit()]
+        for date in dates:
+            if date == self.local.today:
+                continue
+            projects = os.listdir(os.path.join(basedir, date))
+            for project in projects:
+                if project not in list_date_info:
+                    list_date_info[project] = {}
+                list_date_info[project][date] = []
+                files = os.listdir(os.path.join(basedir, date, project))
+                list_date_info[project][date].extend(
+                    [filename[len(project):] for filename in files])
+        return list_date_info
+
+    def diff_lists(self, project, date, in_suffix, out_suffix):
+        '''
+        for a given project and date, find the list of media
+        (<project> + in_suffix) for that project, generated on that date,
+        and write out all entries in that file not in today's list
+        for the same project.
+        '''
+        oldfile = os.path.join(self.config['listsdir'], date, project,
+                               project + in_suffix)
+        todayfile = os.path.join(self.config['listsdir'], self.local.today, project,
+                                 project + in_suffix)
+        outfile = os.path.join(self.config['listsdir'], self.local.today, project,
+                               project + out_suffix)
+        if self.dryrun:
+            print("would write {out} from {old}, {today}".format(
+                out=outfile, old=oldfile, today=todayfile))
+            return
+        if self.verbose:
+            print("writing {out} from {old}, {today}".format(
+                out=outfile, old=oldfile, today=todayfile))
+        with gzip.open(oldfile, "rb") as old_in:
+            with gzip.open(todayfile, "rb") as today_in:
+                with gzip.open(outfile, "wb") as output:
+                    newline = None
+                    while True:
+                        oldline = old_in.read()
+                        if not oldline:
+                            return
+                        while newline is None or newline < oldline:
+                            newline = today_in.read()
+                        if newline is None or newline > oldline:
+                            output.write(newline)
+
+    def list_media_gone_from_remote(self, most_recent_lists):
+        '''
+        for each project to do,
         if there is a previous list of <project>-all-media-keep.gz, compare the current
         list to the most recent such list, and generate a list of media that is no longer
         on the remote, and therefore should be deleted by us.
@@ -763,10 +837,16 @@ class ListsMaker():
         out deletes from that, in the case there is a previous remotes media list. It
         will save a lot of stat calls.
         '''
-        return
+        for project in self.projects.active:
+            if project in self.projects.todo:
+                date = self.get_most_recent_file(project, '-all-media-keep.gz',
+                                                 most_recent_lists)
+                if  date:
+                    self.diff_lists(project, date, '-all-media-keep.gz', '-all-media-gone.gz')
 
-    def list_new_uploaded_media_on_remote(self):
+    def list_new_uploaded_media_on_remote(self, most_recent_lists):
         '''
+        for each project to do,
         if there is a previous list of <project>-uploads-sorted.gz, compare the current
         list to the most recent such list, and generate a list of media that is new on
         the remote, uploaded to the project, and therefore should be downloaded by us.
@@ -776,8 +856,9 @@ class ListsMaker():
         '''
         return
 
-    def list_new_foreign_media_on_remote(self):
+    def list_new_foreign_media_on_remote(self, most_recent_lists):
         '''
+        for each project to do,
         if there is a previous list of <project>-foreignrepo-sorted.gz, compare the current
         list to the most recent such list, and generate a list of media that is new on
         the remote, uploaded to the foreign repo, and therefore should be downloaded by us.
