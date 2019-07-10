@@ -4,7 +4,8 @@ import getopt
 import os
 import urllib
 import sys
-from sync.sync import Sync, ListsGetter, LocalFiles, ListsMaker, Projects
+from sync.projects import Projects
+from sync.sync import Sync, ListsGetter, LocalFiles, ListsMaker
 
 
 CONFIG_SECTIONS = {'dirs': ['mediadir', 'archivedir', 'listsdir'],
