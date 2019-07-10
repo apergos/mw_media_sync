@@ -245,6 +245,12 @@ def do_lists_generation(args, config, projects):
     if args['verbose']:
         print("generating list of remote media gone since last run")
     maker.list_media_gone_from_remote(lists_by_date)
+    if args['verbose']:
+        print("generating list of new project-uploaded media since last run")
+    maker.list_new_uploaded_media_on_remote(lists_by_date)
+    if args['verbose']:
+        print("generating list of new foreign-repo media since last run")
+    maker.list_new_foreign_media_on_remote(lists_by_date)
 
     if args['verbose']:
         print("generating list of local media not on remote project")

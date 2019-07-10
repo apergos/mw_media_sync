@@ -1,4 +1,8 @@
-This approach is very inefficient, downloading and processing the same files
+Test on more active wikis (with more uploads locally/remotely and more
+file deletions) the generation of diffs for deletes, project uploads,
+foreign repo uploads.
+
+This general approach is very inefficient, downloading and processing the same files
 again although we already have them, either for an earlier run today or a previous
 run. Keeping track of the most recent files, doing HEAD requests would be nice.
 
@@ -36,11 +40,12 @@ we do about that? It's possible the files will be there the next time (someone
 might have uploaded them). Should we could them against the max num to download?
 Should we refuse to retry failures for some number of runs (configurable)?
 
-Be able to specify 'deletes only' or 'downloads only from file' or
+We should be able to specify 'deletes only' or 'downloads only from file' or
 'downloads only, resume from x filename' so we don't have to do all the
-steps for a run
+steps for a run. Or just specify --continue and let downloads continue from where
+they were; this means being smart enough to read through the most recent list
+of good download downloads and failed downloads, find the latest entry,
+read through the toget list until we find that entry, and then continue
+as usual.
 
 So, lots to do, even after a first kinda-working version is done.
-
-
-

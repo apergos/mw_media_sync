@@ -794,12 +794,24 @@ class ListsMaker():
                     [filename[len(project):] for filename in files])
         return list_date_info
 
-    def diff_lists(self, project, date, in_suffix, out_suffix):
+    def show_extra_entries(self, old_in, today_in, output):
+        newline = None
+        while True:
+            oldline = old_in.read()
+            if not oldline:
+                return
+            while newline is None or newline < oldline:
+                newline = today_in.read()
+            if newline is None or newline > oldline:
+                output.write(newline)
+
+    def diff_lists(self, project, date, in_suffix, out_suffix, difftype='oldextra'):
         '''
         for a given project and date, find the list of media
         (<project> + in_suffix) for that project, generated on that date,
-        and write out all entries in that file not in today's list
-        for the same project.
+        and write out:
+        for difftype 'oldextra', all entries in that file not in today's list
+        for difftype 'newextra', all entries in today's list not in the old file
         '''
         oldfile = os.path.join(self.config['listsdir'], date, project,
                                project + in_suffix)
@@ -817,15 +829,16 @@ class ListsMaker():
         with gzip.open(oldfile, "rb") as old_in:
             with gzip.open(todayfile, "rb") as today_in:
                 with gzip.open(outfile, "wb") as output:
-                    newline = None
-                    while True:
-                        oldline = old_in.read()
-                        if not oldline:
-                            return
-                        while newline is None or newline < oldline:
-                            newline = today_in.read()
-                        if newline is None or newline > oldline:
-                            output.write(newline)
+                    if difftype == 'oldextra':
+                        self.show_extra_entries(old_in, today_in, output)
+                    elif difftype == 'newextra':
+                        self.show_extra_entries(today_in, old_in, output)
+                    else:
+                        sys.stderr.write("unknown diff type {dtype} for {project}, {date}\n".format(
+                            dtype=difftype, project=project, date=date))
+                        sys.stderr.write("files: {in1}, {in2}, {out}\n".format(
+                            in1=oldfile, in2=todayfile, out=outfile))
+                        return
 
     def list_media_gone_from_remote(self, most_recent_lists):
         '''
@@ -842,7 +855,9 @@ class ListsMaker():
                 date = self.get_most_recent_file(project, '-all-media-keep.gz',
                                                  most_recent_lists)
                 if  date:
-                    self.diff_lists(project, date, '-all-media-keep.gz', '-all-media-gone.gz')
+                    self.diff_lists(project, date,
+                                    '-all-media-keep.gz', '-all-media-gone.gz',
+                                    'oldextra')
 
     def list_new_uploaded_media_on_remote(self, most_recent_lists):
         '''
@@ -854,7 +869,14 @@ class ListsMaker():
         out downloads from that, in the case there is a previous remotes media list. It
         will save a lot of stat calls.
         '''
-        return
+        for project in self.projects.active:
+            if project in self.projects.todo:
+                date = self.get_most_recent_file(project, '-uploads-sorted.gz',
+                                                 most_recent_lists)
+                if  date:
+                    self.diff_lists(project, date,
+                                    '-uploads-sorted.gz', '-new-media-projectuploads.gz',
+                                    'newextra')
 
     def list_new_foreign_media_on_remote(self, most_recent_lists):
         '''
@@ -866,7 +888,14 @@ class ListsMaker():
         out downloads from that, in the case there is a previous remotes media list. It
         will save a lot of stat calls.
         '''
-        return
+        for project in self.projects.active:
+            if project in self.projects.todo:
+                date = self.get_most_recent_file(project, '-foreignrepo-sorted.gz',
+                                                 most_recent_lists)
+                if  date:
+                    self.diff_lists(project, date,
+                                    '-foreignrepo-sorted.gz', '-new-media-foreignrepouploads.gz',
+                                    'newextra')
 
 
 class Sync():
