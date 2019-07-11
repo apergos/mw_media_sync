@@ -111,6 +111,23 @@ class ListsMaker():
                     return date
         return None
 
+    @staticmethod
+    def show_extra_entries(old_in, today_in, output):
+        '''
+        given two input filehandles to sorted entries, write to the
+        output filehandle all entries in the first input file and not
+        in the second
+        '''
+        newline = None
+        while True:
+            oldline = old_in.read()
+            if not oldline:
+                return
+            while newline is None or newline < oldline:
+                newline = today_in.read()
+            if newline is None or newline > oldline:
+                output.write(newline)
+
     def __init__(self, config, projects, verbose=False, dryrun=False):
         '''
         configparser instance,
@@ -381,7 +398,7 @@ class ListsMaker():
                                     # not in the keep list. delete!
                                     deletes.write(have_line)
 
-    def get_most_recent(self):
+    def get_most_recent(self, today=False):
         '''
         for all lists,
         find the most recent date each file was produced for each project,
@@ -395,7 +412,7 @@ class ListsMaker():
         dates = os.listdir(basedir)
         dates = [date for date in dates if len(date) == 8 and date.isdigit()]
         for date in dates:
-            if date == self.local.today:
+            if not today and date == self.local.today:
                 continue
             projects = os.listdir(os.path.join(basedir, date))
             for project in projects:
@@ -406,17 +423,6 @@ class ListsMaker():
                 list_date_info[project][date].extend(
                     [filename[len(project):] for filename in files])
         return list_date_info
-
-    def show_extra_entries(self, old_in, today_in, output):
-        newline = None
-        while True:
-            oldline = old_in.read()
-            if not oldline:
-                return
-            while newline is None or newline < oldline:
-                newline = today_in.read()
-            if newline is None or newline > oldline:
-                output.write(newline)
 
     def diff_lists(self, project, date, in_suffix, out_suffix, difftype='oldextra'):
         '''
@@ -553,6 +559,35 @@ class Sync():
             path = path + md5_hash[0:i] + '/'
         return path.rstrip('/')
 
+    @staticmethod
+    def get_last_entry(path):
+        '''read and return the last entry from a
+        gzipped file. expect the format to be
+        'something'<whitespace>something else
+        Pretty awful isn't it'''
+        last_entry = None
+        with gzip.open(path, "rb") as infile:
+            while True:
+                entry = infile.readline()
+                if not entry:
+                    return last_entry
+                last_entry = entry.rstrip().split()[0]
+                if last_entry.startswith(b"'") and last_entry.endswith(b"'"):
+                    last_entry = last_entry[1:-1]
+        return None
+
+    @staticmethod
+    def find_entry_in_file(fhandle, to_find):
+        '''find the last entry in a gzipped file
+        and return it. the slow tedious way.'''
+        while True:
+            entry = fhandle.readline()
+            if not entry:
+                return False
+            entry = entry.rstrip()
+            if entry == to_find:
+                return True
+
     def __init__(self, config, projects, verbose=False, dryrun=False):
         '''
         configparser instance,
@@ -663,11 +698,14 @@ class Sync():
                                         'failed to download media on ' + project + ' via ' + url,
                                         return_on_fail=True)
             if resp_code:
+                fhandles['fail_out'].write(("'%s' [%d] %s\n" % (
+                    toget.decode('utf-8'), resp_code, url)).encode('utf-8'))
+
                 fhandles['fail_out'].write("'{filename}' [{code}] {url}\n".format(
                     filename=toget, url=url, code=resp_code).encode('utf-8'))
             else:
-                fhandles['retr_out'].write("'{filename}' {url}".format(
-                    filename=toget, url=url).encode('utf-8'))
+                fhandles['retr_out'].write(("'%s' %s\n" % (
+                    toget.decode('utf-8'), url)).encode('utf-8'))
             time.sleep(self.config['http_wait'])
 
     def get_new_media_from_list(self, max_gets, repotype, files):
@@ -721,3 +759,85 @@ class Sync():
                 files['toget'] = os.path.join(basedir, self.local.today, project,
                                               project + '-foreignrepo-toget.gz')
                 self.get_new_media_from_list(max_foreignrepo_gets, 'foreignrepo', files)
+
+    def continue_getting_new_media(self):
+        '''
+        for each project todo, find the last file we successfully downloaded for
+        project-uploaded media, check the list of files to download for that date,
+        locate the entry in that file with the last file we downloaded, and continue
+        downloads from there. Then repeat for foreign-repo-uploaded media (yet to be
+        implemented). Log all downloads to success/failure logs for today.
+        We only look at full lists to download, not incremental lists (this needs
+        also to be implemented, but with care).
+        '''
+        maker = ListsMaker(self.config, self.projects, self.verbose, self.dryrun)
+        lists_by_date = maker.get_most_recent(today=True)
+
+        basedir = self.config['listsdir']
+        good_projectuploaded_gets_file = '_local_retrieved.gz'
+        good_foreignrepouploaded_gets_file = '_foreignrepo_retrieved.gz'
+
+        fhandles = {}
+        for project in self.projects.active:
+            if project in self.projects.todo:
+                print("checking project", project)
+                # first find out when we last downloaded something successfully
+                # from that site
+                projectuploads_gets_date = maker.get_most_recent_file(
+                    project, good_projectuploaded_gets_file, lists_by_date)
+                print("projectuploads_gets_date for", project, "is", projectuploads_gets_date)
+                foreignrepouploads_gets_date = maker.get_most_recent_file(
+                    project, good_foreignrepouploaded_gets_file, lists_by_date)
+
+                # for each of these, get the last file downloaded
+                # then find the file of that date with the files to download
+                # then pass the name of the last file downloaded  and the filepath
+                # of items to be downloaded to some method to do the next batch
+                # what happens if we downloaded a new file of togets later? well it won't
+                # have any of the previously downloaded items in it, so we won't be
+                # able to determine which of those to get and which not.
+
+                # project-uploaded files first
+                to_get_list = os.path.join(basedir, projectuploads_gets_date, project,
+                                           project + '-uploaded-toget.gz')
+                retrieved_list = os.path.join(basedir, projectuploads_gets_date, project,
+                                              project + '_local_retrieved.gz')
+                failed_list = os.path.join(basedir, projectuploads_gets_date, project,
+                                           project + '_local_get_failed.gz')
+
+                downloaded_last = self.get_last_entry(os.path.join(
+                    basedir, projectuploads_gets_date,
+                    project, project + good_projectuploaded_gets_file))
+
+                print("checked", os.path.join(basedir, projectuploads_gets_date,
+                                              project, project + good_projectuploaded_gets_file),
+                      "for last downloaded:", downloaded_last)
+
+                if downloaded_last is None:
+                    continue
+
+                with gzip.open(to_get_list, "rb") as fhandles['toget_in']:
+                    if not self.find_entry_in_file(fhandles['toget_in'], downloaded_last):
+                        continue
+                    if self.dryrun:
+                        print("would download media after", downloaded_last, "from",
+                              to_get_list, 'with logging to', retrieved_list,
+                              "and", failed_list)
+                        continue
+                    if self.verbose:
+                        print("downloading media after", downloaded_last, "from",
+                              to_get_list, ' with logging to', retrieved_list,
+                              "and", failed_list)
+
+                    retr_mode = "wb"
+                    if os.path.exists(retrieved_list):
+                        retr_mode = "ab"
+
+                    failed_mode = "wb"
+                    if os.path.exists(failed_list):
+                        failed_mode = "ab"
+
+                    with gzip.open(retrieved_list, retr_mode) as fhandles['retr_out']:
+                        with gzip.open(failed_list, failed_mode) as fhandles['fail_out']:
+                            self.get_new_media_for_project(
+                                'local', project, self.config['max_uploaded_gets'], fhandles)

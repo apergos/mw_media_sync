@@ -23,8 +23,8 @@ def usage(message=None):
     '''
     if message:
         sys.stderr.write("%s\n" % message)
-    usage_message = """Usage: $0 --configfile <path> [--projects] [--retries <num>] [--wait <num>]
-          [--verbose] [--dryrun]
+    usage_message = """Usage: $0 --configfile <path> [--projects] [--retries <num>]
+          [--wait <num>] [--continue] [--verbose] [--dryrun]
 or: $0 --help
 
 This script retrieves information about media files uploaded or in use on a group of wikis,
@@ -34,6 +34,8 @@ that aren't used remotely, and downloads remote files that don't exist locally.
 Arguments:
     --configfile (-c)    path to the configuration file with information about the
                          remote wikis, the local media directory tree, and so on
+    --continue   (-C)    continue downloads from where the previous run, if any, left
+                         off
     --projects   (-p)    comma-separated list of projects to sync from, otherwise
                          all active remote projects will be synced from
     --retries    (-r)    the number of times to attempt to download a file before giving
@@ -54,14 +56,15 @@ def parse_args():
     args = {'verbose': False,
             'dryrun': False,
             'help': False,
+            'continue': False,
             'configfile': None,
             'projects_todo': None,
             'retries': None,
             'wait': None}
     try:
         (options, remainder) = getopt.gnu_getopt(
-            sys.argv[1:], "c:p:r:w:dvh", ["configfile=", "retries=", "wait=",
-                                          "projects=", "verbose", "dryrun", "help"])
+            sys.argv[1:], "c:p:r:w:Cdvh", ["configfile=", "retries=", "wait=",
+                                           "projects=", "continue", "verbose", "dryrun", "help"])
 
     except getopt.GetoptError as err:
         usage("Unknown option specified: " + str(err))
@@ -75,6 +78,8 @@ def parse_args():
             args['retries'] = val
         elif opt in ["-w", "--wait"]:
             args['wait'] = val
+        elif opt in ["-C", "--continue"]:
+            args['continue'] = True
         elif opt in ["-v", "--verbose"]:
             args['verbose'] = True
         elif opt in ["-d", "--dryrun"]:
@@ -184,6 +189,16 @@ def exclude_foreign_repo(config, active_projects):
             active_projects.pop(config['foreignrepo'], None)
 
 
+def do_continue_downloads(args, config, projects):
+    '''continue to retrieve media from remote, picking up
+    from where last run left off, if any.'''
+    syncer = Sync(config, projects, args['verbose'], args['dryrun'])
+
+    if args['verbose']:
+        print("continuing to download local media not on remote project")
+    syncer.continue_getting_new_media()
+
+
 def do_localmedia_prep(args, config, projects):
     '''do all the things to local media we want
     to do before sync (archive old crap, list out what
@@ -282,10 +297,13 @@ def do_main():
     if args['verbose']:
         print("active projects are:", ",".join(projects.active.keys()))
 
-    do_localmedia_prep(args, config, projects)
-    do_lists_retrieval(args, config, projects)
-    do_lists_generation(args, config, projects)
-    do_sync(args, config, projects)
+    if args['continue']:
+        do_continue_downloads(args, config, projects)
+    else:
+        do_localmedia_prep(args, config, projects)
+        do_lists_retrieval(args, config, projects)
+        do_lists_generation(args, config, projects)
+        do_sync(args, config, projects)
 
 
 if __name__ == '__main__':

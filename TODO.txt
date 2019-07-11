@@ -40,12 +40,13 @@ we do about that? It's possible the files will be there the next time (someone
 might have uploaded them). Should we could them against the max num to download?
 Should we refuse to retry failures for some number of runs (configurable)?
 
-We should be able to specify 'deletes only' or 'downloads only from file' or
-'downloads only, resume from x filename' so we don't have to do all the
-steps for a run. Or just specify --continue and let downloads continue from where
-they were; this means being smart enough to read through the most recent list
-of good download downloads and failed downloads, find the latest entry,
-read through the toget list until we find that entry, and then continue
-as usual.
+We should be able to specify 'deletes only' so we don't have to do all the
+steps for a run.
+
+Make --continue also look for most recent incremental 'get these' lists
+in the case that the most recent successful download is from one of those
+
+meta.wikimedia.org has downloads from upload.wm.o/wikipedia/meta
+Note that p instead of m there in the wiki*edia. That's a problem. Fix.
 
 So, lots to do, even after a first kinda-working version is done.
