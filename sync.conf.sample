@@ -36,3 +36,5 @@ foreignrepo=commonswiki
 # user agent string for making all those requests!
 # see: https://meta.wikimedia.org/wiki/User-Agent_policy
 agent=
+# url path for mediawiki api requests per project
+api_path=/w/api.php

@@ -44,9 +44,7 @@ class LocalFiles():
         create it and the associated hashdirs'''
 
         basedir = self.config['mediadir']
-        projects_todo = self.projects.active.keys()
-        if self.projects.todo:
-            projects_todo = self.projects.todo
+        projects_todo = self.projects.get_todos()
         for project in projects_todo:
             project_dir = os.path.join(basedir,
                                        self.projects.active[project]['projecttype'],
@@ -60,6 +58,7 @@ class LocalFiles():
         tar up the media and move it to the directory
         archive/inactive/projectname-date-media.tar.gz
         return'''
+        self.projects.fill_in_projecttypes()
         for project in self.get_projects():
             if project not in self.projects.active and not self.project_is_empty(project):
                 self.archive_project(project)
@@ -70,7 +69,7 @@ class LocalFiles():
         if not os.path.exists(self.config['archivedir']):
             os.makedirs(self.config['archivedir'])
 
-        projecttype, langcode = self.projects.active.get_projecttype_langcode(project)
+        projecttype, langcode = self.projects.get_projecttype_langcode(project)
         now = time.strftime("%Y%m%d%H%M%S", time.gmtime())
         # yes this is only good down to the nearest second.
         # we shouldn't be trying to archive multiple copies
@@ -196,13 +195,15 @@ class LocalFiles():
         if not os.path.exists(self.config['listsdir']):
             os.makedirs(self.config['listsdir'])
         local_projects = self.get_projects()
+        todo = self.projects.get_todos()
         for project in local_projects:
-            if project in self.projects.todo:
+            if project in todo:
                 self.record_local_media_for_project(project)
 
     def sort_local_media_lists(self):
         '''read and sort the local media lists'''
         local_projects = self.get_projects()
+        todo = self.projects.get_todos()
         for project in local_projects:
-            if project in self.projects.todo:
+            if project in todo:
                 self.sort_local_media_for_project(project)

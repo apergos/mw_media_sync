@@ -62,13 +62,13 @@ class ListsGetter():
 
         baseurl = self.config['media_filelists_url'] + '/' + date
         getter = WebGetter(self.config, self.dryrun)
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                filename = filename_template.format(project=project, date=date)
-                url = baseurl + '/' + filename
-                output_path = os.path.join(self.config['listsdir'],
-                                           self.local.today, project, filename)
-                getter.get_file(url, output_path, err_message + project)
+        todos = self.projects.get_todos()
+        for project in todos:
+            filename = filename_template.format(project=project, date=date)
+            url = baseurl + '/' + filename
+            output_path = os.path.join(self.config['listsdir'],
+                                       self.local.today, project, filename)
+            getter.get_file(url, output_path, err_message + project)
 
     def get_project_uploaded_media(self):
         '''get via http from remote server the latest list
@@ -137,7 +137,6 @@ class ListsMaker():
         '''
         self.config = config
         self.projects = projects
-        self.projects_todo = None
         self.local = LocalFiles(config, projects, verbose, dryrun)
         self.verbose = verbose
         self.dryrun = dryrun
@@ -170,30 +169,30 @@ class ListsMaker():
         for all projects to do
         in_ and out_ filename templates will have the project name substituted in.
         example filename template: {project}-*-local-wikiqueries.gz'''
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                filename_base = in_filename_template.format(project=project)
-                media_lists_path = os.path.join(self.config['listsdir'],
-                                                self.local.today, project, filename_base)
-                todays_files = glob.glob(media_lists_path)
-                if not todays_files:
-                    print("warning: no media list files found of format", in_filename_template,
-                          "for project", project)
-                    continue
+        todos = self.projects.get_todos()
+        for project in todos:
+            filename_base = in_filename_template.format(project=project)
+            media_lists_path = os.path.join(self.config['listsdir'],
+                                            self.local.today, project, filename_base)
+            todays_files = glob.glob(media_lists_path)
+            if not todays_files:
+                print("warning: no media list files found of format", in_filename_template,
+                      "for project", project)
+                continue
 
-                most_recent = sorted(todays_files)[-1]
-                if not most_recent.endswith('.gz'):
-                    print("warning: bad filename found,", most_recent)
-                    continue
-                newname = os.path.join(self.config['listsdir'], self.local.today, project,
-                                       out_filename_template.format(project=project))
+            most_recent = sorted(todays_files)[-1]
+            if not most_recent.endswith('.gz'):
+                print("warning: bad filename found,", most_recent)
+                continue
+            newname = os.path.join(self.config['listsdir'], self.local.today, project,
+                                   out_filename_template.format(project=project))
 
-                if self.dryrun:
-                    print("would filter {old} to {new}".format(
-                        old=most_recent, new=newname))
-                    return
+            if self.dryrun:
+                print("would filter {old} to {new}".format(
+                    old=most_recent, new=newname))
+                return
 
-                self.remove_first_line_sort(most_recent, newname)
+            self.remove_first_line_sort(most_recent, newname)
 
     def cleanup_project_uploaded_media_lists(self):
         '''uncompress, remove the first line which reflects sql table columns,
@@ -253,16 +252,16 @@ class ListsMaker():
         '''for each project to do, generate a list of uploaded files we
         don't have locally, and write the list into a file for retrieval later.'''
         basedir = self.config['listsdir']
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                local_files_list = os.path.join(basedir, self.local.today, project,
-                                                project + '_local_media_sorted.gz')
-                uploaded_files_list = os.path.join(basedir, self.local.today, project,
-                                                   project + '-uploads-sorted.gz')
-                output_path = os.path.join(basedir, self.local.today, project,
-                                           project + '-uploaded-toget.gz')
-                self.list_uploaded_files_toget_for_project(
-                    local_files_list, uploaded_files_list, output_path)
+        todos = self.projects.get_todos()
+        for project in todos:
+            local_files_list = os.path.join(basedir, self.local.today, project,
+                                            project + '_local_media_sorted.gz')
+            uploaded_files_list = os.path.join(basedir, self.local.today, project,
+                                               project + '-uploads-sorted.gz')
+            output_path = os.path.join(basedir, self.local.today, project,
+                                       project + '-uploaded-toget.gz')
+            self.list_uploaded_files_toget_for_project(
+                local_files_list, uploaded_files_list, output_path)
 
     def list_foreignrepo_files_toget_for_project(self, local_files_list,
                                                  foreignrepo_files_list, output_path):
@@ -310,16 +309,16 @@ class ListsMaker():
         NOTE that we might have an older copy than the remote server
         and we have no way to check for that at present. FIXME'''
         basedir = self.config['listsdir']
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                local_files_list = os.path.join(basedir, self.local.today, project,
-                                                project + '_local_media_sorted.gz')
-                foreignrepo_files_list = os.path.join(basedir, self.local.today, project,
-                                                      project + '-foreignrepo-sorted.gz')
-                output_path = os.path.join(basedir, self.local.today, project,
-                                           project + '-foreignrepo-toget.gz')
-                self.list_foreignrepo_files_toget_for_project(
-                    local_files_list, foreignrepo_files_list, output_path)
+        todos = self.projects.get_todos()
+        for project in todos:
+            local_files_list = os.path.join(basedir, self.local.today, project,
+                                            project + '_local_media_sorted.gz')
+            foreignrepo_files_list = os.path.join(basedir, self.local.today, project,
+                                                  project + '-foreignrepo-sorted.gz')
+            output_path = os.path.join(basedir, self.local.today, project,
+                                       project + '-foreignrepo-toget.gz')
+            self.list_foreignrepo_files_toget_for_project(
+                local_files_list, foreignrepo_files_list, output_path)
 
     def merge_media_files_to_keep(self):
         '''for each active project, merge the lists of uploaded
@@ -336,67 +335,67 @@ class ListsMaker():
         # NOTE THAT the uploaded list has filename<whitespace>timestamp
         # while the other one just has filename
         # So when we use this file later we need to bear that in mind
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                basedir = os.path.join(self.config['listsdir'], self.local.today, project)
-                uploaded = os.path.join(basedir, project + '-uploads-sorted.gz')
-                foreign = os.path.join(basedir, project + '-foreignrepo-sorted.gz')
-                outpath = os.path.join(basedir, project + '-all-media-keep.gz')
-                sort_command = "LC_ALL=C sort -m "
-                gunzip_commands = "<(gunzip -c {uploaded}) <(gunzip -c {foreign})".format(
-                    uploaded=uploaded, foreign=foreign)
-                command = sort_command + gunzip_commands + " | gzip > " + outpath
-                if self.dryrun:
-                    print("for project", project, "would merge media-to-keep into",
-                          outpath, 'with command:')
-                    print(command)
-                else:
-                    with Popen(command, shell=True, stderr=PIPE, executable='/bin/bash') as proc:
-                        _unused_output, errors = proc.communicate()
-                        if errors:
-                            print(errors.decode('utf-8').rstrip('\n'))
-                            return
+        todos = self.projects.get_todos()
+        for project in todos:
+            basedir = os.path.join(self.config['listsdir'], self.local.today, project)
+            uploaded = os.path.join(basedir, project + '-uploads-sorted.gz')
+            foreign = os.path.join(basedir, project + '-foreignrepo-sorted.gz')
+            outpath = os.path.join(basedir, project + '-all-media-keep.gz')
+            sort_command = "LC_ALL=C sort -m "
+            gunzip_commands = "<(gunzip -c {uploaded}) <(gunzip -c {foreign})".format(
+                uploaded=uploaded, foreign=foreign)
+            command = sort_command + gunzip_commands + " | gzip > " + outpath
+            if self.dryrun:
+                print("for project", project, "would merge media-to-keep into",
+                      outpath, 'with command:')
+                print(command)
+            else:
+                with Popen(command, shell=True, stderr=PIPE, executable='/bin/bash') as proc:
+                    _unused_output, errors = proc.communicate()
+                    if errors:
+                        print(errors.decode('utf-8').rstrip('\n'))
+                        return
 
     def list_local_media_not_on_remote(self):
         '''for each project to do, list all media not on the remote
         server (either as project upload or in foreign repo and used
         by the project)'''
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                basedir = os.path.join(self.config['listsdir'], self.local.today, project)
-                keeps_list = os.path.join(basedir, project + '-all-media-keep.gz')
-                haves_list = os.path.join(basedir, project + '_local_media_sorted.gz')
-                deletes_list = os.path.join(basedir, project + '-all-media-delete.gz')
-                if self.dryrun:
-                    print("would write {deletes} from {keeps}, {haves}".format(
-                        deletes=deletes_list, keeps=keeps_list, haves=haves_list))
-                    return
-                if self.verbose:
-                    print("writing {deletes} from {keeps}, {haves}".format(
-                        deletes=deletes_list, keeps=keeps_list, haves=haves_list))
-                with gzip.open(keeps_list, "rb") as keeps:
-                    with gzip.open(haves_list, "rb") as haves:
-                        with gzip.open(deletes_list, "wb") as deletes:
-                            keep = None
-                            keeps_eof = False
-                            while True:
-                                have_line = haves.readline()
-                                if not have_line:
-                                    # done
-                                    return
-                                have = have_line.split()[0]
-                                while (keep is None or keep < have) and not keeps_eof:
-                                    keep_line = keeps.readline()
-                                    if not keep_line:
-                                        keeps_eof = True
-                                        break
-                                    # some entries in here look like
-                                    # LettertoDefenceMinister.pdf	20070115045609
-                                    # because they are from a query against the image table
-                                    keep = keep_line.split()[0]
-                                if keeps_eof or keep > have:
-                                    # not in the keep list. delete!
-                                    deletes.write(have_line)
+        todos = self.projects.get_todos()
+        for project in todos:
+            basedir = os.path.join(self.config['listsdir'], self.local.today, project)
+            keeps_list = os.path.join(basedir, project + '-all-media-keep.gz')
+            haves_list = os.path.join(basedir, project + '_local_media_sorted.gz')
+            deletes_list = os.path.join(basedir, project + '-all-media-delete.gz')
+            if self.dryrun:
+                print("would write {deletes} from {keeps}, {haves}".format(
+                    deletes=deletes_list, keeps=keeps_list, haves=haves_list))
+                return
+            if self.verbose:
+                print("writing {deletes} from {keeps}, {haves}".format(
+                    deletes=deletes_list, keeps=keeps_list, haves=haves_list))
+            with gzip.open(keeps_list, "rb") as keeps:
+                with gzip.open(haves_list, "rb") as haves:
+                    with gzip.open(deletes_list, "wb") as deletes:
+                        keep = None
+                        keeps_eof = False
+                        while True:
+                            have_line = haves.readline()
+                            if not have_line:
+                                # done
+                                return
+                            have = have_line.split()[0]
+                            while (keep is None or keep < have) and not keeps_eof:
+                                keep_line = keeps.readline()
+                                if not keep_line:
+                                    keeps_eof = True
+                                    break
+                                # some entries in here look like
+                                # LettertoDefenceMinister.pdf	20070115045609
+                                # because they are from a query against the image table
+                                keep = keep_line.split()[0]
+                            if keeps_eof or keep > have:
+                                # not in the keep list. delete!
+                                deletes.write(have_line)
 
     def get_most_recent(self, today=False):
         '''
@@ -469,14 +468,14 @@ class ListsMaker():
         out deletes from that, in the case there is a previous remotes media list. It
         will save a lot of stat calls.
         '''
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                date = self.get_most_recent_file(project, '-all-media-keep.gz',
-                                                 most_recent_lists)
-                if  date:
-                    self.diff_lists(project, date,
-                                    '-all-media-keep.gz', '-all-media-gone.gz',
-                                    'oldextra')
+        todos = self.projects.get_todos()
+        for project in todos:
+            date = self.get_most_recent_file(project, '-all-media-keep.gz',
+                                             most_recent_lists)
+            if  date:
+                self.diff_lists(project, date,
+                                '-all-media-keep.gz', '-all-media-gone.gz',
+                                'oldextra')
 
     def list_new_uploaded_media_on_remote(self, most_recent_lists):
         '''
@@ -488,14 +487,14 @@ class ListsMaker():
         out downloads from that, in the case there is a previous remotes media list. It
         will save a lot of stat calls.
         '''
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                date = self.get_most_recent_file(project, '-uploads-sorted.gz',
-                                                 most_recent_lists)
-                if  date:
-                    self.diff_lists(project, date,
-                                    '-uploads-sorted.gz', '-new-media-projectuploads.gz',
-                                    'newextra')
+        todos = self.projects.get_todos()
+        for project in todos:
+            date = self.get_most_recent_file(project, '-uploads-sorted.gz',
+                                             most_recent_lists)
+            if  date:
+                self.diff_lists(project, date,
+                                '-uploads-sorted.gz', '-new-media-projectuploads.gz',
+                                'newextra')
 
     def list_new_foreign_media_on_remote(self, most_recent_lists):
         '''
@@ -507,14 +506,14 @@ class ListsMaker():
         out downloads from that, in the case there is a previous remotes media list. It
         will save a lot of stat calls.
         '''
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                date = self.get_most_recent_file(project, '-foreignrepo-sorted.gz',
-                                                 most_recent_lists)
-                if  date:
-                    self.diff_lists(project, date,
-                                    '-foreignrepo-sorted.gz', '-new-media-foreignrepouploads.gz',
-                                    'newextra')
+        todos = self.projects.get_todos()
+        for project in todos:
+            date = self.get_most_recent_file(project, '-foreignrepo-sorted.gz',
+                                             most_recent_lists)
+            if  date:
+                self.diff_lists(project, date,
+                                '-foreignrepo-sorted.gz', '-new-media-foreignrepouploads.gz',
+                                'newextra')
 
 
 class Sync():
@@ -597,7 +596,6 @@ class Sync():
         '''
         self.config = config
         self.projects = projects
-        self.projects_todo = None
         self.local = LocalFiles(config, projects, verbose, dryrun)
         self.verbose = verbose
         self.dryrun = dryrun
@@ -613,36 +611,36 @@ class Sync():
         around
         folks who want to permanently remove such images can
         periodically clean out the archive/deleted directory'''
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                basedir = os.path.join(self.config['listsdir'], self.local.today, project)
-                deletes_list = os.path.join(basedir, project + '-all-media-delete.gz')
-                (projecttype, langcode) = self.local.projects.get_projecttype_langcode(project)
-                archived_deletes_dir = os.path.join(self.config['archivedir'], 'deleted',
-                                                    projecttype, langcode)
-                if self.dryrun:
-                    print("would move entries in {deletes} to {archived} ".format(
-                        deletes=deletes_list, archived=archived_deletes_dir))
-                    return
-                if not os.path.exists(archived_deletes_dir):
-                    os.makedirs(archived_deletes_dir)
-                    self.local.init_hashdirs(archived_deletes_dir)
-                if self.verbose:
-                    print("moving entries in {deletes} to {archived} ".format(
-                        deletes=deletes_list, archived=archived_deletes_dir))
-                with gzip.open(deletes_list, "rb") as deletes:
-                    while True:
-                        delete_line = deletes.readline()
-                        if not delete_line:
-                            # eof
-                            return
-                        filename = delete_line.rstrip().split()[0]
-                        hashpath = self.get_hashpath(filename, 2)
-                        old_path = os.path.join(self.config['mediadir'], projecttype, langcode,
-                                                hashpath, filename.decode('utf-8'))
-                        new_path = os.path.join(archived_deletes_dir,
-                                                hashpath, filename.decode('utf-8'))
-                        shutil.move(old_path, new_path)
+        todos = self.projects.get_todos()
+        for project in todos:
+            basedir = os.path.join(self.config['listsdir'], self.local.today, project)
+            deletes_list = os.path.join(basedir, project + '-all-media-delete.gz')
+            (projecttype, langcode) = self.local.projects.get_projecttype_langcode(project)
+            archived_deletes_dir = os.path.join(self.config['archivedir'], 'deleted',
+                                                projecttype, langcode)
+            if self.dryrun:
+                print("would move entries in {deletes} to {archived} ".format(
+                    deletes=deletes_list, archived=archived_deletes_dir))
+                return
+            if not os.path.exists(archived_deletes_dir):
+                os.makedirs(archived_deletes_dir)
+                self.local.init_hashdirs(archived_deletes_dir)
+            if self.verbose:
+                print("moving entries in {deletes} to {archived} ".format(
+                    deletes=deletes_list, archived=archived_deletes_dir))
+            with gzip.open(deletes_list, "rb") as deletes:
+                while True:
+                    delete_line = deletes.readline()
+                    if not delete_line:
+                        # eof
+                        return
+                    filename = delete_line.rstrip().split()[0]
+                    hashpath = self.get_hashpath(filename, 2)
+                    old_path = os.path.join(self.config['mediadir'], projecttype, langcode,
+                                            hashpath, filename.decode('utf-8'))
+                    new_path = os.path.join(archived_deletes_dir,
+                                            hashpath, filename.decode('utf-8'))
+                    shutil.move(old_path, new_path)
 
     def get_media_download_url(self, file_toget, project, hashpath, upload_type):
         '''get and return the url for downloading the original media
@@ -703,6 +701,10 @@ class Sync():
 
                 fhandles['fail_out'].write("'{filename}' [{code}] {url}\n".format(
                     filename=toget, url=url, code=resp_code).encode('utf-8'))
+                if resp_code == 404:
+                    # don't count missing files against our get count, they are
+                    # probably junk links
+                    gets -= 1
             else:
                 fhandles['retr_out'].write(("'%s' %s\n" % (
                     toget.decode('utf-8'), url)).encode('utf-8'))
@@ -721,16 +723,16 @@ class Sync():
         in case there's been a long gap between runs and you're
         playing catch-up.'''
         fhandles = {}
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                if self.dryrun:
-                    print("would get files from {flist}, logs {failed} (failed), {ok} (ok)".format(
-                        flist=files['toget'], failed=files['failed'], ok=files['retrieved']))
-                    return
-                with gzip.open(files['toget'], "rb") as fhandles['toget_in']:
-                    with gzip.open(files['retrieved'], "wb") as fhandles['retr_out']:
-                        with gzip.open(files['failed'], "wb") as fhandles['fail_out']:
-                            self.get_new_media_for_project(repotype, project, max_gets, fhandles)
+        todos = self.projects.get_todos()
+        for project in todos:
+            if self.dryrun:
+                print("would get files from {flist}, logs {failed} (failed), {ok} (ok)".format(
+                    flist=files['toget'], failed=files['failed'], ok=files['retrieved']))
+                return
+            with gzip.open(files['toget'], "rb") as fhandles['toget_in']:
+                with gzip.open(files['retrieved'], "wb") as fhandles['retr_out']:
+                    with gzip.open(files['failed'], "wb") as fhandles['fail_out']:
+                        self.get_new_media_for_project(repotype, project, max_gets, fhandles)
 
     def get_new_media(self):
         '''
@@ -743,22 +745,22 @@ class Sync():
         max_local_gets = self.config['max_uploaded_gets']
         max_foreignrepo_gets = self.config['max_foreignrepo_gets']
         files = {}
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                files['retrieved'] = os.path.join(basedir, self.local.today, project,
-                                                  project + '_local_retrieved.gz')
-                files['failed'] = os.path.join(basedir, self.local.today, project,
-                                               project + '_local_get_failed.gz')
-                files['toget'] = os.path.join(basedir, self.local.today, project,
-                                              project + '-uploaded-toget.gz')
-                self.get_new_media_from_list(max_local_gets, 'local', files)
-                files['retrieved'] = os.path.join(basedir, self.local.today, project,
-                                                  project + '_foreignrepo-retrieved.gz')
-                files['failed'] = os.path.join(basedir, self.local.today, project,
-                                               project + '_foreignrepo_get_failed.gz')
-                files['toget'] = os.path.join(basedir, self.local.today, project,
-                                              project + '-foreignrepo-toget.gz')
-                self.get_new_media_from_list(max_foreignrepo_gets, 'foreignrepo', files)
+        todos = self.projects.get_todos()
+        for project in todos:
+            files['retrieved'] = os.path.join(basedir, self.local.today, project,
+                                              project + '_local_retrieved.gz')
+            files['failed'] = os.path.join(basedir, self.local.today, project,
+                                           project + '_local_get_failed.gz')
+            files['toget'] = os.path.join(basedir, self.local.today, project,
+                                          project + '-uploaded-toget.gz')
+            self.get_new_media_from_list(max_local_gets, 'local', files)
+            files['retrieved'] = os.path.join(basedir, self.local.today, project,
+                                              project + '_foreignrepo-retrieved.gz')
+            files['failed'] = os.path.join(basedir, self.local.today, project,
+                                           project + '_foreignrepo_get_failed.gz')
+            files['toget'] = os.path.join(basedir, self.local.today, project,
+                                          project + '-foreignrepo-toget.gz')
+            self.get_new_media_from_list(max_foreignrepo_gets, 'foreignrepo', files)
 
     def continue_getting_new_media(self):
         '''
@@ -778,66 +780,65 @@ class Sync():
         good_foreignrepouploaded_gets_file = '_foreignrepo_retrieved.gz'
 
         fhandles = {}
-        for project in self.projects.active:
-            if project in self.projects.todo:
-                print("checking project", project)
-                # first find out when we last downloaded something successfully
-                # from that site
-                projectuploads_gets_date = maker.get_most_recent_file(
-                    project, good_projectuploaded_gets_file, lists_by_date)
-                print("projectuploads_gets_date for", project, "is", projectuploads_gets_date)
-                foreignrepouploads_gets_date = maker.get_most_recent_file(
-                    project, good_foreignrepouploaded_gets_file, lists_by_date)
+        todos = self.projects.get_todos()
+        for project in todos:
+            # first find out when we last downloaded something successfully
+            # from that site
+            projectuploads_gets_date = maker.get_most_recent_file(
+                project, good_projectuploaded_gets_file, lists_by_date)
+            print("projectuploads_gets_date for", project, "is", projectuploads_gets_date)
+            foreignrepouploads_gets_date = maker.get_most_recent_file(
+                project, good_foreignrepouploaded_gets_file, lists_by_date)
 
-                # for each of these, get the last file downloaded
-                # then find the file of that date with the files to download
-                # then pass the name of the last file downloaded  and the filepath
-                # of items to be downloaded to some method to do the next batch
-                # what happens if we downloaded a new file of togets later? well it won't
-                # have any of the previously downloaded items in it, so we won't be
-                # able to determine which of those to get and which not.
+            # for each of these, get the last file downloaded
+            # then find the file of that date with the files to download
+            # then pass the name of the last file downloaded  and the filepath
+            # of items to be downloaded to some method to do the next batch
+            # what happens if we downloaded a new file of togets later? well it won't
+            # have any of the previously downloaded items in it, so we won't be
+            # able to determine which of those to get and which not.
 
-                # project-uploaded files first
-                to_get_list = os.path.join(basedir, projectuploads_gets_date, project,
-                                           project + '-uploaded-toget.gz')
-                retrieved_list = os.path.join(basedir, projectuploads_gets_date, project,
-                                              project + '_local_retrieved.gz')
-                failed_list = os.path.join(basedir, projectuploads_gets_date, project,
-                                           project + '_local_get_failed.gz')
+            # project-uploaded files first
+            to_get_list = os.path.join(basedir, projectuploads_gets_date, project,
+                                       project + '-uploaded-toget.gz')
+            retrieved_list = os.path.join(basedir, projectuploads_gets_date, project,
+                                          project + '_local_retrieved.gz')
+            failed_list = os.path.join(basedir, projectuploads_gets_date, project,
+                                       project + '_local_get_failed.gz')
 
-                downloaded_last = self.get_last_entry(os.path.join(
-                    basedir, projectuploads_gets_date,
-                    project, project + good_projectuploaded_gets_file))
+            downloaded_last = self.get_last_entry(os.path.join(
+                basedir, projectuploads_gets_date,
+                project, project + good_projectuploaded_gets_file))
 
-                print("checked", os.path.join(basedir, projectuploads_gets_date,
-                                              project, project + good_projectuploaded_gets_file),
-                      "for last downloaded:", downloaded_last)
+            print("checked", os.path.join(basedir, projectuploads_gets_date,
+                                          project, project + good_projectuploaded_gets_file),
+                  "for last downloaded:", downloaded_last)
 
-                if downloaded_last is None:
+            if downloaded_last is None:
+                continue
+
+            with gzip.open(to_get_list, "rb") as fhandles['toget_in']:
+                if not self.find_entry_in_file(fhandles['toget_in'], downloaded_last):
                     continue
+                if self.dryrun:
+                    print("would download media after", downloaded_last, "from",
+                          to_get_list, 'with logging to', retrieved_list,
+                          "and", failed_list)
+                    continue
+                if self.verbose:
+                    print("downloading media after", downloaded_last, "from",
+                          to_get_list, ' with logging to', retrieved_list,
+                          "and", failed_list)
 
-                with gzip.open(to_get_list, "rb") as fhandles['toget_in']:
-                    if not self.find_entry_in_file(fhandles['toget_in'], downloaded_last):
-                        continue
-                    if self.dryrun:
-                        print("would download media after", downloaded_last, "from",
-                              to_get_list, 'with logging to', retrieved_list,
-                              "and", failed_list)
-                        continue
-                    if self.verbose:
-                        print("downloading media after", downloaded_last, "from",
-                              to_get_list, ' with logging to', retrieved_list,
-                              "and", failed_list)
+                retr_mode = "wb"
+                if os.path.exists(retrieved_list):
+                    retr_mode = "ab"
 
-                    retr_mode = "wb"
-                    if os.path.exists(retrieved_list):
-                        retr_mode = "ab"
+                failed_mode = "wb"
+                if os.path.exists(failed_list):
+                    failed_mode = "ab"
 
-                    failed_mode = "wb"
-                    if os.path.exists(failed_list):
-                        failed_mode = "ab"
-
-                    with gzip.open(retrieved_list, retr_mode) as fhandles['retr_out']:
-                        with gzip.open(failed_list, failed_mode) as fhandles['fail_out']:
-                            self.get_new_media_for_project(
-                                'local', project, self.config['max_uploaded_gets'], fhandles)
+                with gzip.open(retrieved_list, retr_mode) as fhandles['retr_out']:
+                    with gzip.open(failed_list, failed_mode) as fhandles['fail_out']:
+                        self.get_new_media_for_project(
+                            'local', project, self.config['max_uploaded_gets'], fhandles)

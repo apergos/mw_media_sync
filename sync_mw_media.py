@@ -13,7 +13,7 @@ CONFIG_SECTIONS = {'dirs': ['mediadir', 'archivedir', 'listsdir'],
                             'foreignrepo_media_url'],
                    'limits': ['http_wait', 'http_retries', 'max_uploaded_gets',
                               'max_foreignrepo_gets'],
-                   'misc': ['foreignrepo', 'agent']}
+                   'misc': ['api_path', 'foreignrepo', 'agent']}
 
 
 def usage(message=None):
@@ -34,6 +34,10 @@ that aren't used remotely, and downloads remote files that don't exist locally.
 Arguments:
     --configfile (-c)    path to the configuration file with information about the
                          remote wikis, the local media directory tree, and so on
+    --archive    (-a)    archive inactive projects; this is a slow operation
+                         because detailed information about all active projects
+                         must be retrieved via the MediaWiki api, one project
+                         at a time
     --continue   (-C)    continue downloads from where the previous run, if any, left
                          off
     --projects   (-p)    comma-separated list of projects to sync from, otherwise
@@ -50,12 +54,45 @@ Arguments:
     sys.exit(1)
 
 
+def get_arg(opt, val, args):
+    '''set one arg from opt/val'''
+    if opt in ["-c", "--configfile"]:
+        args['configfile'] = val
+    elif opt in ["-p", "--projects"]:
+        args['projects_todo'] = val.split(',')
+    elif opt in ["-r", "--retries"]:
+        args['retries'] = val
+    elif opt in ["-w", "--wait"]:
+        args['wait'] = val
+    else:
+        return False
+    return True
+
+
+def get_flag(opt, args):
+    '''set one flag from opt'''
+    if opt in ["-a", "--archive"]:
+        args['archive'] = True
+    elif opt in ["-C", "--continue"]:
+        args['continue'] = True
+    elif opt in ["-v", "--verbose"]:
+        args['verbose'] = True
+    elif opt in ["-d", "--dryrun"]:
+        args['dryrun'] = True
+    elif opt in ["-h", "--help"]:
+        usage('Help for this script\n')
+    else:
+        return False
+    return True
+
+
 def parse_args():
     '''get args passed on the command line
     and return as a dict'''
     args = {'verbose': False,
             'dryrun': False,
             'help': False,
+            'archive': False,
             'continue': False,
             'configfile': None,
             'projects_todo': None,
@@ -63,30 +100,14 @@ def parse_args():
             'wait': None}
     try:
         (options, remainder) = getopt.gnu_getopt(
-            sys.argv[1:], "c:p:r:w:Cdvh", ["configfile=", "retries=", "wait=",
-                                           "projects=", "continue", "verbose", "dryrun", "help"])
+            sys.argv[1:], "c:p:r:w:aCdvh", ["configfile=", "retries=", "wait=", "projects=",
+                                            "archive", "continue", "verbose", "dryrun", "help"])
 
     except getopt.GetoptError as err:
         usage("Unknown option specified: " + str(err))
 
     for (opt, val) in options:
-        if opt in ["-c", "--configfile"]:
-            args['configfile'] = val
-        elif opt in ["-p", "--projects"]:
-            args['projects_todo'] = val.split(',')
-        elif opt in ["-r", "--retries"]:
-            args['retries'] = val
-        elif opt in ["-w", "--wait"]:
-            args['wait'] = val
-        elif opt in ["-C", "--continue"]:
-            args['continue'] = True
-        elif opt in ["-v", "--verbose"]:
-            args['verbose'] = True
-        elif opt in ["-d", "--dryrun"]:
-            args['dryrun'] = True
-        elif opt in ["-h", "--help"]:
-            usage('Help for this script\n')
-        else:
+        if not get_arg(opt, val, args) and not get_flag(opt, args):
             usage("Unknown option specified: <%s>" % opt)
 
     if remainder:
@@ -207,9 +228,12 @@ def do_localmedia_prep(args, config, projects):
     if args['verbose']:
         print("setting up local media subdirectories")
     local.init_mediadirs()
-    if args['verbose']:
-        print("archiving inactive projects")
-    local.archive_inactive_projects()
+
+    if args['archive']:
+        if args['verbose']:
+            print("archiving inactive projects")
+        local.archive_inactive_projects()
+
     if args['verbose']:
         print("getting lists of local media")
     local.get_local_media_lists()
