@@ -4,23 +4,15 @@ import gzip
 import shutil
 import time
 from subprocess import Popen, PIPE
+from sync.listsmaker import ListsMaker
 
 
 class LocalFiles():
     '''methods for setting up local directories, listing local media,
     archiving projects locally, etc'''
-    def __init__(self, config, projects, verbose=False, dryrun=False):
-        '''
-        configparser instance,
-        Projects instance
-        '''
-        self.config = config
-        self.projects = projects
-        self.today = time.strftime("%Y%m%d", time.gmtime())
-        self.verbose = verbose
-        self.dryrun = dryrun
 
-    def init_hashdirs(self, basedir):
+    @staticmethod
+    def init_hashdirs(basedir, dryrun):
         '''
         create two levels of subdirectories based on how we hash media files
         and store them
@@ -33,10 +25,24 @@ class LocalFiles():
                 subdir = os.path.join(
                     basedir, first_digit, first_digit + ending)
                 if not os.path.exists(subdir):
-                    if self.dryrun:
+                    if dryrun:
                         print("would make directory(ies):", subdir)
                     else:
                         os.makedirs(subdir)
+
+    def __init__(self, config, projects, today, most_recent_lists,
+                 full=False, verbose=False, dryrun=False):
+        '''
+        configparser instance,
+        Projects instance
+        '''
+        self.config = config
+        self.projects = projects
+        self.most_recent_lists = most_recent_lists
+        self.today = today
+        self.full = full
+        self.verbose = verbose
+        self.dryrun = dryrun
 
     def init_mediadirs(self):
         '''if there is no local basedir for media, or if
@@ -49,7 +55,7 @@ class LocalFiles():
             project_dir = os.path.join(basedir,
                                        self.projects.active[project]['projecttype'],
                                        self.projects.active[project]['langcode'])
-            self.init_hashdirs(project_dir)
+            self.init_hashdirs(project_dir, self.dryrun)
 
     def archive_inactive_projects(self):
         '''if a local directory references a project that
@@ -147,6 +153,12 @@ class LocalFiles():
         basedir = os.path.join(self.config['listsdir'], date, project)
         outputpath = os.path.join(basedir, project + '_local_media_sorted.gz')
         inputpath = os.path.join(basedir, project + '_local_media.gz')
+
+        if not os.path.exists(inputpath):
+            if self.dryrun or self.verbose:
+                print("no file {infile} to sort, skipping".format(infile=inputpath))
+                return
+
         command = "zcat {infile} | LC_ALL=C sort -k 1 -S 70% | gzip > {outfile}".format(
             infile=inputpath, outfile=outputpath)
         if self.dryrun:
@@ -198,7 +210,9 @@ class LocalFiles():
         todo = self.projects.get_todos()
         for project in local_projects:
             if project in todo:
-                self.record_local_media_for_project(project)
+                if self.full or not ListsMaker.get_most_recent_file(
+                        project, '-all-media-keep.gz', self.most_recent_lists):
+                    self.record_local_media_for_project(project)
 
     def sort_local_media_lists(self):
         '''read and sort the local media lists'''
