@@ -4,8 +4,12 @@ import getopt
 import os
 import urllib
 import sys
+import time
 from sync.projects import Projects
-from sync.sync import Sync, ListsGetter, LocalFiles, ListsMaker
+from sync.local import LocalFiles
+from sync.listsmaker import ListsMaker
+from sync.listsgetter import ListsGetter
+from sync.sync import Sync
 
 
 CONFIG_SECTIONS = {'dirs': ['mediadir', 'archivedir', 'listsdir'],
@@ -39,7 +43,10 @@ Arguments:
                          must be retrieved via the MediaWiki api, one project
                          at a time
     --continue   (-C)    continue downloads from where the previous run, if any, left
-                         off
+                         off; this cannot be used with the 'full' option
+    --full       (-f)    even if there is a previous run for the wikis to do, generate
+                         all files from scratch as a full run; this cannot be used with
+                         the 'continue' option
     --projects   (-p)    comma-separated list of projects to sync from, otherwise
                          all active remote projects will be synced from
     --retries    (-r)    the number of times to attempt to download a file before giving
@@ -75,6 +82,8 @@ def get_flag(opt, args):
         args['archive'] = True
     elif opt in ["-C", "--continue"]:
         args['continue'] = True
+    elif opt in ["-f", "--full"]:
+        args['full'] = True
     elif opt in ["-v", "--verbose"]:
         args['verbose'] = True
     elif opt in ["-d", "--dryrun"]:
@@ -94,6 +103,7 @@ def parse_args():
             'help': False,
             'archive': False,
             'continue': False,
+            'full': False,
             'configfile': None,
             'projects_todo': None,
             'retries': None,
@@ -101,7 +111,8 @@ def parse_args():
     try:
         (options, remainder) = getopt.gnu_getopt(
             sys.argv[1:], "c:p:r:w:aCdvh", ["configfile=", "retries=", "wait=", "projects=",
-                                            "archive", "continue", "verbose", "dryrun", "help"])
+                                            "archive", "continue", "full",
+                                            "verbose", "dryrun", "help"])
 
     except getopt.GetoptError as err:
         usage("Unknown option specified: " + str(err))
@@ -134,6 +145,8 @@ def validate_args(args):
         if not args['wait'].isdigit():
             usage('--wait argument must be a positive integer')
         args['wait'] = int(args['wait'])
+    if args['continue'] and args['full']:
+        usage('--full and --continue are mutually exclusive options')
 
 
 def get_args():
@@ -210,21 +223,22 @@ def exclude_foreign_repo(config, active_projects):
             active_projects.pop(config['foreignrepo'], None)
 
 
-def do_continue_downloads(args, config, projects):
+def do_continue_downloads(args, config, projects, today):
     '''continue to retrieve media from remote, picking up
     from where last run left off, if any.'''
-    syncer = Sync(config, projects, args['verbose'], args['dryrun'])
+    syncer = Sync(config, projects, today, args['verbose'], args['dryrun'])
 
     if args['verbose']:
         print("continuing to download local media not on remote project")
     syncer.continue_getting_new_media()
 
 
-def do_localmedia_prep(args, config, projects):
+def do_localmedia_prep(args, config, projects, today, most_recent_lists):
     '''do all the things to local media we want
     to do before sync (archive old crap, list out what
     we have that's good, etc)'''
-    local = LocalFiles(config, projects, args['verbose'], args['dryrun'])
+    local = LocalFiles(config, projects, today, most_recent_lists, args['full'],
+                       args['verbose'], args['dryrun'])
     if args['verbose']:
         print("setting up local media subdirectories")
     local.init_mediadirs()
@@ -242,10 +256,10 @@ def do_localmedia_prep(args, config, projects):
     local.sort_local_media_lists()
 
 
-def do_lists_retrieval(args, config, projects):
+def do_lists_retrieval(args, config, projects, today):
     '''get all the lists of media we need from the
     remote host'''
-    getter = ListsGetter(config, projects, args['verbose'], args['dryrun'])
+    getter = ListsGetter(config, projects, today, args['verbose'], args['dryrun'])
 
     if args['verbose']:
         print("getting lists of media uploaded to projects")
@@ -255,10 +269,11 @@ def do_lists_retrieval(args, config, projects):
     getter.get_project_foreignrepo_media()
 
 
-def do_lists_generation(args, config, projects):
+def do_lists_generation(args, config, projects, today, most_recent_lists):
     '''generate all the lists of media we need: media to delete,
     media to retrieve, etc'''
-    maker = ListsMaker(config, projects, args['verbose'], args['dryrun'])
+    maker = ListsMaker(config, projects, today, most_recent_lists,
+                       args['full'], args['verbose'], args['dryrun'])
 
     if args['verbose']:
         print("cleaning up lists of media uploaded to projects")
@@ -269,7 +284,7 @@ def do_lists_generation(args, config, projects):
 
     if args['verbose']:
         print("generating list of project-uploaded media to get")
-    maker.generate_uploaded_files_to_get()
+        maker.generate_uploaded_files_to_get()
     if args['verbose']:
         print("generating list of foreign repo-uploaded media to get")
     maker.generate_foreignrepo_files_to_get()
@@ -278,28 +293,25 @@ def do_lists_generation(args, config, projects):
         print("creating list of media to keep locally")
     maker.merge_media_files_to_keep()
 
-    lists_by_date = maker.get_most_recent()
-    if args['verbose']:
-        print(lists_by_date)
-
     if args['verbose']:
         print("generating list of remote media gone since last run")
-    maker.list_media_gone_from_remote(lists_by_date)
+    maker.list_media_gone_from_remote(most_recent_lists)
     if args['verbose']:
         print("generating list of new project-uploaded media since last run")
-    maker.list_new_uploaded_media_on_remote(lists_by_date)
+    maker.list_new_uploaded_media_on_remote(most_recent_lists)
     if args['verbose']:
         print("generating list of new foreign-repo media since last run")
-    maker.list_new_foreign_media_on_remote(lists_by_date)
+    maker.list_new_foreign_media_on_remote(most_recent_lists)
 
     if args['verbose']:
         print("generating list of local media not on remote project")
     maker.list_local_media_not_on_remote()
 
 
-def do_sync(args, config, projects):
+def do_sync(args, config, projects, today, most_recent_lists):
     '''retrieve media from remote, delete crap we don't need'''
-    syncer = Sync(config, projects, args['verbose'], args['dryrun'])
+    syncer = Sync(config, projects, today, most_recent_lists,
+                  args['full'], args['verbose'], args['dryrun'])
 
     if args['verbose']:
         print("deleting local media not on remote project")
@@ -321,13 +333,18 @@ def do_main():
     if args['verbose']:
         print("active projects are:", ",".join(projects.active.keys()))
 
+    today = time.strftime("%Y%m%d", time.gmtime())
+    most_recent_lists = ListsMaker.get_most_recent(config['listsdir'], today)
+    if args['verbose']:
+        print(most_recent_lists)
+
     if args['continue']:
-        do_continue_downloads(args, config, projects)
+        do_continue_downloads(args, config, projects, today)
     else:
-        do_localmedia_prep(args, config, projects)
-        do_lists_retrieval(args, config, projects)
-        do_lists_generation(args, config, projects)
-        do_sync(args, config, projects)
+        do_localmedia_prep(args, config, projects, today, most_recent_lists)
+        do_lists_retrieval(args, config, projects, today)
+        do_lists_generation(args, config, projects, today, most_recent_lists)
+        do_sync(args, config, projects, today, most_recent_lists)
 
 
 if __name__ == '__main__':
