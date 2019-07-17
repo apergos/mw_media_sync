@@ -278,6 +278,102 @@ class Sync():
                                               project + 'new-media-foreignrepouploads.gz')
             self.get_new_media_from_list(max_foreignrepo_gets, 'foreignrepo', files)
 
+    def get_fnames_for_continue(self, upload_type, date, project):
+        '''
+        get and return the filenames for the list of files for download, the
+        output list of files successfully retrieved, and the output list of
+        files for which retrieval failed, depending on the upload type
+        (project-uploaded: 'local', or foreignrepo-uploaded: 'foreign')
+        '''
+        fnames = {}
+        basedir = self.config['listsdir']
+
+        if upload_type == 'local':
+            toget_type = 'uploaded'
+            retrieved_type = 'local'
+        elif upload_type == 'foreign':
+            toget_type = 'foreignrepo'
+            retrieved_type = 'foreignrepo'
+        else:
+            # no idea what the upload type is
+            return fnames
+
+        fnames['to_get_list'] = os.path.join(
+            basedir, date, project, project + '-{ftype}-toget.gz'.format(
+                ftype=toget_type))
+        fnames['retrieved_list'] = os.path.join(
+            basedir, date, project, project + '_{ftype}_retrieved.gz'.format(
+                ftype=retrieved_type))
+        fnames['failed_list'] = os.path.join(
+            basedir, date, project, project + '_{ftype}_get_failed.gz'.format(
+                ftype=retrieved_type))
+        return fnames
+
+    def continue_uploaded_media_gets(self, project, downloaded_last, fnames):
+        '''
+        given the project, a dict of input and output files, and the date
+        of the last download, continue getting media from the input list
+        and log results to the success and fail output files.
+        '''
+        fhandles = {}
+        if downloaded_last is None:
+            return
+
+        with gzip.open(fnames['to_get_list'], "rb") as fhandles['toget_in']:
+            if not self.find_entry_in_file(fhandles['toget_in'], downloaded_last):
+                return
+            if self.dryrun:
+                print("would download media after", downloaded_last, "from",
+                      fnames['to_get_list'], 'with logging to', fnames['retrieved_list'],
+                      "and", fnames['failed_list'])
+                return
+            if self.verbose:
+                print("downloading media after", downloaded_last, "from",
+                      fnames['to_get_list'], ' with logging to', fnames['retrieved_list'],
+                      "and", fnames['failed_list'])
+
+            retr_mode = "wb"
+            if os.path.exists(fnames['retrieved_list']):
+                retr_mode = "ab"
+
+            failed_mode = "wb"
+            if os.path.exists(fnames['failed_list']):
+                failed_mode = "ab"
+
+            with gzip.open(fnames['retrieved_list'], retr_mode) as fhandles['retr_out']:
+                with gzip.open(fnames['failed_list'], failed_mode) as fhandles['fail_out']:
+                    self.get_new_media_for_project(
+                        'local', project, self.config['max_uploaded_gets'], fhandles)
+
+    def get_downloaded_last(self, project, upload_type, lists_by_date):
+        '''
+        for either project-uploaded ('local') or foreignrepo-uploaded ('foreign')
+        files of a project, determine the last file downloaded, return it and
+        the date of the retrieval list
+        returns None if there was never a list created
+        '''
+        if upload_type == 'local':
+            gets_file = '_local_retrieved.gz'
+        elif upload_type == 'foreign':
+            gets_file = '_foreignrepo_retrieved.gz'
+
+        basedir = self.config['listsdir']
+        gets_date = ListsMaker.get_most_recent_file(project, gets_file, lists_by_date)
+        if not gets_date:
+            if self.verbose:
+                print("no downloads for project", project)
+            return None, None
+
+        # fixme if there is a list and it's empty, we should account for that, ugh
+        downloaded_last = self.get_last_entry(os.path.join(
+            basedir, gets_date, project, project + gets_file))
+
+        if self.verbose:
+            print("checked", os.path.join(basedir, gets_date, project, project + gets_file),
+                  "for last downloaded:", downloaded_last)
+
+        return downloaded_last, gets_date
+
     def continue_getting_new_media(self):
         '''
         for each project todo, find the last file we successfully downloaded for
@@ -288,108 +384,19 @@ class Sync():
         We only look at full lists to download, not incremental lists (this needs
         also to be implemented, but with care).
         '''
-        basedir = self.config['listsdir']
         lists_by_date = ListsMaker.get_most_recent(self.config['listsdir'], today=True)
-        good_projectuploaded_gets_file = '_local_retrieved.gz'
-        good_foreignrepouploaded_gets_file = '_foreignrepo_retrieved.gz'
 
-        fhandles = {}
         todos = self.projects.get_todos()
         for project in todos:
-            # first find out when we last downloaded something successfully
-            # from that site
-            projectuploads_gets_date = ListsMaker.get_most_recent_file(
-                project, good_projectuploaded_gets_file, lists_by_date)
-            foreignrepouploads_gets_date = ListsMaker.get_most_recent_file(
-                project, good_foreignrepouploaded_gets_file, lists_by_date)
 
             # project-uploaded files first
-            to_get_list = os.path.join(basedir, projectuploads_gets_date, project,
-                                       project + '-uploaded-toget.gz')
-            retrieved_list = os.path.join(basedir, projectuploads_gets_date, project,
-                                          project + '_local_retrieved.gz')
-            failed_list = os.path.join(basedir, projectuploads_gets_date, project,
-                                       project + '_local_get_failed.gz')
-
-            downloaded_last = self.get_last_entry(os.path.join(
-                basedir, projectuploads_gets_date,
-                project, project + good_projectuploaded_gets_file))
-
-            if self.verbose:
-                print("checked", os.path.join(basedir, projectuploads_gets_date,
-                                              project, project + good_projectuploaded_gets_file),
-                      "for last downloaded:", downloaded_last)
-
-            if downloaded_last is None:
-                continue
-
-            with gzip.open(to_get_list, "rb") as fhandles['toget_in']:
-                if not self.find_entry_in_file(fhandles['toget_in'], downloaded_last):
-                    continue
-                if self.dryrun:
-                    print("would download media after", downloaded_last, "from",
-                          to_get_list, 'with logging to', retrieved_list,
-                          "and", failed_list)
-                    continue
-                if self.verbose:
-                    print("downloading media after", downloaded_last, "from",
-                          to_get_list, ' with logging to', retrieved_list,
-                          "and", failed_list)
-
-                retr_mode = "wb"
-                if os.path.exists(retrieved_list):
-                    retr_mode = "ab"
-
-                failed_mode = "wb"
-                if os.path.exists(failed_list):
-                    failed_mode = "ab"
-
-                with gzip.open(retrieved_list, retr_mode) as fhandles['retr_out']:
-                    with gzip.open(failed_list, failed_mode) as fhandles['fail_out']:
-                        self.get_new_media_for_project(
-                            'local', project, self.config['max_uploaded_gets'], fhandles)
+            downloaded_last, gets_date = self.get_downloaded_last(project, 'local', lists_by_date)
+            if downloaded_last is not None:
+                fnames = self.get_fnames_for_continue('local', gets_date, project)
+                self.continue_uploaded_media_gets(project, downloaded_last, fnames)
 
             # foreignrepo-uploaded files next
-            to_get_list = os.path.join(basedir, foreignrepouploads_gets_date, project,
-                                       project + '-foreignrepo-toget.gz')
-            retrieved_list = os.path.join(basedir, foreignrepouploads_gets_date, project,
-                                          project + '_foreignrepo_retrieved.gz')
-            failed_list = os.path.join(basedir, foreignrepouploads_gets_date, project,
-                                       project + '_foreignrepo_get_failed.gz')
-
-            downloaded_last = self.get_last_entry(os.path.join(
-                basedir, foreignrepouploads_gets_date,
-                project, project + good_foreignrepouploaded_gets_file))
-
-            print("checked", os.path.join(basedir, foreignrepouploads_gets_date,
-                                          project, project + good_foreignrepouploaded_gets_file),
-                  "for last downloaded:", downloaded_last)
-
-            if downloaded_last is None:
-                continue
-
-            with gzip.open(to_get_list, "rb") as fhandles['toget_in']:
-                if not self.find_entry_in_file(fhandles['toget_in'], downloaded_last):
-                    continue
-                if self.dryrun:
-                    print("would download media after", downloaded_last, "from",
-                          to_get_list, 'with logging to', retrieved_list,
-                          "and", failed_list)
-                    continue
-                if self.verbose:
-                    print("downloading media after", downloaded_last, "from",
-                          to_get_list, ' with logging to', retrieved_list,
-                          "and", failed_list)
-
-                retr_mode = "wb"
-                if os.path.exists(retrieved_list):
-                    retr_mode = "ab"
-
-                failed_mode = "wb"
-                if os.path.exists(failed_list):
-                    failed_mode = "ab"
-
-                with gzip.open(retrieved_list, retr_mode) as fhandles['retr_out']:
-                    with gzip.open(failed_list, failed_mode) as fhandles['fail_out']:
-                        self.get_new_media_for_project(
-                            'local', project, self.config['max_uploaded_gets'], fhandles)
+            downloaded_last, gets_date = self.get_downloaded_last(project, 'foreign', lists_by_date)
+            if downloaded_last is not None:
+                fnames = self.get_fnames_for_continue('foreign', gets_date, project)
+                self.continue_uploaded_media_gets(project, downloaded_last, fnames)
