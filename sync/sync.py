@@ -219,9 +219,9 @@ class Sync():
         we don't have locally, up to some number (configured)
         of items
         write all entries we retrieved to
-        filelists/date/projectname/projectname_local_retrieved.gz
+        filelists/date/projectname/projectname-local-retrieved.gz
         write all entries we failed to retrieve after n retries, to
-        filelists/date/projectname/projectname_local_get_failed.gz
+        filelists/date/projectname/projectname-local-get-failed.gz
         The point of limiting the number of retrievals is to
         do only so many at a time, before the next deletion run,
         in case there's been a long gap between runs and you're
@@ -252,9 +252,9 @@ class Sync():
         todos = self.projects.get_todos()
         for project in todos:
             files['retrieved'] = os.path.join(basedir, self.today, project,
-                                              project + '_local_retrieved.gz')
+                                              project + '-local-retrieved.gz')
             files['failed'] = os.path.join(basedir, self.today, project,
-                                           project + '_local_get_failed.gz')
+                                           project + '-local-get-failed.gz')
             if self.full or not ListsMaker.get_most_recent_file(
                     project, '-all-media-keep.gz', self.most_recent_lists):
                 files['toget'] = os.path.join(basedir, self.today, project,
@@ -265,9 +265,9 @@ class Sync():
                                               project + '-new-media-projectuploads.gz')
             self.get_new_media_from_list(max_local_gets, 'local', files)
             files['retrieved'] = os.path.join(basedir, self.today, project,
-                                              project + '_foreignrepo_retrieved.gz')
+                                              project + '-foreignrepo-retrieved.gz')
             files['failed'] = os.path.join(basedir, self.today, project,
-                                           project + '_foreignrepo_get_failed.gz')
+                                           project + '-foreignrepo-get-failed.gz')
             if self.full or not ListsMaker.get_most_recent_file(
                     project, '-all-media-keep.gz', self.most_recent_lists):
                 files['toget'] = os.path.join(basedir, self.today, project,
@@ -302,10 +302,10 @@ class Sync():
             basedir, date, project, project + '-{ftype}-toget.gz'.format(
                 ftype=toget_type))
         fnames['retrieved_list'] = os.path.join(
-            basedir, date, project, project + '_{ftype}_retrieved.gz'.format(
+            basedir, date, project, project + '-{ftype}-retrieved.gz'.format(
                 ftype=retrieved_type))
         fnames['failed_list'] = os.path.join(
-            basedir, date, project, project + '_{ftype}_get_failed.gz'.format(
+            basedir, date, project, project + '-{ftype}-get-failed.gz'.format(
                 ftype=retrieved_type))
         return fnames
 
@@ -353,9 +353,9 @@ class Sync():
         returns None if there was never a list created
         '''
         if upload_type == 'local':
-            gets_file = '_local_retrieved.gz'
+            gets_file = '-local-retrieved.gz'
         elif upload_type == 'foreign':
-            gets_file = '_foreignrepo_retrieved.gz'
+            gets_file = '-foreignrepo-retrieved.gz'
 
         basedir = self.config['listsdir']
         gets_date = ListsMaker.get_most_recent_file(project, gets_file, lists_by_date)

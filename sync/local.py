@@ -143,7 +143,7 @@ class LocalFiles():
         it by media file title
         each entry in the file looks likt
         01_Me_and_My_Microphone.ogg YYYYMMDDHHMMSS <mediadir>/wikipedia/en/a/a6/
-        the sorted file will live in <listsdir>/date/<project>/<project>_local_media_sorted.gz'''
+        the sorted file will live in <listsdir>/date/<project>/<project>-local-media-sorted.gz'''
         if not self.projects.is_active(project):
             if self.verbose:
                 print("skipping list of local media for", project, "as not active")
@@ -151,8 +151,8 @@ class LocalFiles():
         if not date:
             date = self.today
         basedir = os.path.join(self.config['listsdir'], date, project)
-        outputpath = os.path.join(basedir, project + '_local_media_sorted.gz')
-        inputpath = os.path.join(basedir, project + '_local_media.gz')
+        outputpath = os.path.join(basedir, project + '-local-media-sorted.gz')
+        inputpath = os.path.join(basedir, project + '-local-media.gz')
 
         if not os.path.exists(inputpath):
             if self.dryrun or self.verbose:
@@ -177,7 +177,7 @@ class LocalFiles():
         with path: basename, project name, hashdir and ctime
         so each entry will look like:
         01_Me_and_My_Microphone.ogg YYYYMMDDHHMMSS <mediadir>/wikipedia/en/a/a6/
-        this file will live in <listsdir>/date/<project>/<project>_local_media.gz'''
+        this file will live in <listsdir>/date/<project>/<project>-local-media.gz'''
         if not self.projects.is_active(project):
             if self.verbose:
                 print("skipping list of local media for", project, "as not active")
@@ -189,7 +189,7 @@ class LocalFiles():
             os.makedirs(basedir)
         # if it's already there, what does that mean for us? we'll overwrite the
         # existing list. too bad. maybe we're redoing a bad run or something.
-        outputpath = os.path.join(basedir, project + '_local_media.gz')
+        outputpath = os.path.join(basedir, project + '-local-media.gz')
         if self.dryrun:
             print("for project", project, "would log media into", outputpath)
         else:

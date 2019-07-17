@@ -206,7 +206,7 @@ class ListsMaker():
             if self.full or not ListsMaker.get_most_recent_file(
                     project, '-all-media-keep.gz', self.most_recent_lists):
                 local_files_list = os.path.join(basedir, self.today, project,
-                                                project + '_local_media_sorted.gz')
+                                                project + '-local-media-sorted.gz')
                 uploaded_files_list = os.path.join(basedir, self.today, project,
                                                    project + '-uploads-sorted.gz')
                 output_path = os.path.join(basedir, self.today, project,
@@ -265,7 +265,7 @@ class ListsMaker():
             if self.full or not ListsMaker.get_most_recent_file(
                     project, '-all-media-keep.gz', self.most_recent_lists):
                 local_files_list = os.path.join(basedir, self.today, project,
-                                                project + '_local_media_sorted.gz')
+                                                project + '-local-media-sorted.gz')
                 foreignrepo_files_list = os.path.join(basedir, self.today, project,
                                                       project + '-foreignrepo-sorted.gz')
                 output_path = os.path.join(basedir, self.today, project,
@@ -321,7 +321,7 @@ class ListsMaker():
                     project, '-all-media-keep.gz', self.most_recent_lists):
                 basedir = os.path.join(self.config['listsdir'], self.today, project)
                 keeps_list = os.path.join(basedir, project + '-all-media-keep.gz')
-                haves_list = os.path.join(basedir, project + '_local_media_sorted.gz')
+                haves_list = os.path.join(basedir, project + '-local-media-sorted.gz')
                 deletes_list = os.path.join(basedir, project + '-all-media-delete.gz')
                 if self.dryrun:
                     print("would write {deletes} from {keeps}, {haves}".format(
