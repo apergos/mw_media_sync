@@ -345,7 +345,7 @@ class Sync():
                     self.get_new_media_for_project(
                         'local', project, self.config['max_uploaded_gets'], fhandles)
 
-    def get_downloaded_last(self, project, upload_type, lists_by_date):
+    def get_downloaded_last(self, project, upload_type, lists_by_date, failed=False):
         '''
         for either project-uploaded ('local') or foreignrepo-uploaded ('foreign')
         files of a project, determine the last file downloaded, return it and
@@ -353,9 +353,15 @@ class Sync():
         returns None if there was never a list created
         '''
         if upload_type == 'local':
-            gets_file = '-local-retrieved.gz'
+            if failed:
+                gets_file = '-local-get-failed.gz'
+            else:
+                gets_file = '-local-retrieved.gz'
         elif upload_type == 'foreign':
-            gets_file = '-foreignrepo-retrieved.gz'
+            if failed:
+                gets_file = '-foreignrepo-get-failed.gz'
+            else:
+                gets_file = '-foreignrepo-retrieved.gz'
 
         basedir = self.config['listsdir']
         gets_date = ListsMaker.get_most_recent_file(project, gets_file, lists_by_date)
@@ -364,7 +370,6 @@ class Sync():
                 print("no downloads for project", project)
             return None, None
 
-        # fixme if there is a list and it's empty, we should account for that, ugh
         downloaded_last = self.get_last_entry(os.path.join(
             basedir, gets_date, project, project + gets_file))
 
@@ -391,12 +396,20 @@ class Sync():
 
             # project-uploaded files first
             downloaded_last, gets_date = self.get_downloaded_last(project, 'local', lists_by_date)
+            if downloaded_last is None:
+                downloaded_last, gets_date = self.get_downloaded_last(project, 'local',
+                                                                      lists_by_date, failed=True)
+
             if downloaded_last is not None:
                 fnames = self.get_fnames_for_continue('local', gets_date, project)
                 self.continue_uploaded_media_gets(project, downloaded_last, fnames)
 
             # foreignrepo-uploaded files next
             downloaded_last, gets_date = self.get_downloaded_last(project, 'foreign', lists_by_date)
+            if downloaded_last is None:
+                downloaded_last, gets_date = self.get_downloaded_last(project, 'foreign',
+                                                                      lists_by_date, failed=True)
+
             if downloaded_last is not None:
                 fnames = self.get_fnames_for_continue('foreign', gets_date, project)
                 self.continue_uploaded_media_gets(project, downloaded_last, fnames)
