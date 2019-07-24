@@ -2,7 +2,9 @@
 import os
 import gzip
 import glob
+import hashlib
 import sys
+import time
 from subprocess import Popen, PIPE
 
 
@@ -353,6 +355,138 @@ class ListsMaker():
                                     if keeps_eof or keep > have:
                                         # not in the keep list. delete!
                                         deletes.write(have_line)
+
+    # FIXME this is also in sync/sync.py
+    @staticmethod
+    def get_hashpath(filename, depth):
+        '''given a filename get the hashpath (x/yy(/zzz, etc)) for media storage
+        for mediawiki hashes 'depth' directories deep'''
+        summer = hashlib.md5()
+        summer.update(filename)
+        md5_hash = summer.hexdigest()
+        path = ''
+        for i in range(1, depth+1):
+            path = path + md5_hash[0:i] + '/'
+        return path.rstrip('/')
+
+    def convert_retrieved_list(self, project, retrieved_list, retrieved_date):
+        '''
+        given a list of subsequently retrieved media with lines of the format
+           filename<whitespace>url
+        and a date the list of retrieved entries was last modified,
+        turn this into entries of the format
+           filename<whitespace>YYYYMMDDHHMMSS<whitespace>path
+        where that date is the retrieved_date for every entry
+        and the path is dependent on config, the project name,
+        and the filename (and hashpath).
+        '''
+        (projecttype, langcode) = self.projects.get_projecttype_langcode(project)
+        with gzip.open(retrieved_list, "rb") as list_in:
+            # FIXME should append before the .gz
+            with gzip.open(retrieved_list + "_converted") as list_out:
+                while True:
+                    line = list_in.readline()
+                    if not line:
+                        # FIXME should append before the .gz
+                        return retrieved_list + "_converted"
+                    fields = line.rstrip().split()
+                    converted_line = (fields[0] + ' ' + retrieved_date + ' ' + os.path.join(
+                        self.config['mediadir'], projecttype, langcode,
+                        self.get_hashpath(fields[0], 2), fields[0].decode('utf-8')))
+                    list_out.write(converted_line + '\n')
+
+    # FIXME most of this is copy paste verbatim from merge_media_files_to_keep
+    def merge_two_files(self, project, input_file_a, input_file_b, output_path):
+        '''
+        given two sorted files of the same format, sort-merge them into the
+        output path
+        '''
+        sort_command = "LC_ALL=C sort -m "
+        gunzip_commands = "<(gunzip -c {in_a}) <(gunzip -c {in_b})".format(
+            in_a=input_file_a, in_b=input_file_b)
+        command = sort_command + gunzip_commands + " | gzip > " + output_path
+        if self.dryrun:
+            print("for project", project, "would merge media-to-keep into",
+                  output_path, 'with command:')
+            print(command)
+        else:
+            with Popen(command, shell=True, stderr=PIPE, executable='/bin/bash') as proc:
+                _unused_output, errors = proc.communicate()
+                if errors:
+                    print(errors.decode('utf-8').rstrip('\n'))
+                    return
+
+    def merge_local_media_files(self, project, old_local_media_list, retrieved_list,
+                                retrieved_date, new_media_list):
+        '''
+        given a local media list with lines of the format
+           filename<whitespace>YYYYMMDDHHMMSS<whitespace>path
+        and a list of subsequently retrieved media with lines of the format
+           filename<whitespace>url
+        and a date the list of retrieved entries was last modified (ewww,
+        because of --continue the last file could have been retrieved
+        days later than the first one (!)),
+        manufacture entries of the right format for the local media
+        list and add them to a new file which remains sorted
+        '''
+        # first convert the entries in the retrieved list to a new one
+        # that has the same format as the old local media list
+        converted_path = self.convert_retrieved_list(project, retrieved_list, retrieved_date)
+        # now merge the two files into the new media list file.
+        self.merge_two_files(project, old_local_media_list, converted_path, new_media_list)
+
+    def update_local_media_list_for_project(self, project, date):
+        '''
+        for a given project and date, use the list of local media from
+        that date, and update it with the local and foreign retrievals,
+        to generate a new local media list with today's date.
+
+        FIXME this does not account for deletions... yet.
+        '''
+        old_local_media_list = os.path.join(self.config['listsdir'], date, project,
+                                            project + '-local-media-sorted.gz')
+
+        local_retrieved = os.path.join(self.config['listsdir'], date, project,
+                                       project + 'local-retrieved')
+        foreign_retrieved = os.path.join(self.config['listsdir'], date, project,
+                                         project + 'foreign-retrieved')
+
+        new_local_media_list = os.path.join(self.config['listsdir'], self.today, project,
+                                            project + '-local-media-sorted.gz')
+
+        # FIXME this is pretty inaccurate. we should log timestamps in the
+        # -retrieved files. Later.
+        local_retrieved_date = time.strftime(
+            "%Y%m%d%H%M%S", time.gmtime(os.stat(local_retrieved).st_mtime))
+        foreign_retrieved_date = time.strftime(
+            "%Y%m%d%H%M%S", time.gmtime(os.stat(foreign_retrieved).st_mtime))
+
+        # FIXME should append before the .gz
+        temp_new_media_list = new_local_media_list + "_temp"
+        # merge in the retrieved project-uploaded files
+        if os.path.exists(local_retrieved):
+            self.merge_local_media_files(project, old_local_media_list, local_retrieved,
+                                         local_retrieved_date, temp_new_media_list)
+        # merge in the retrieved foreignrepo-uploaded files
+        if os.path.exists(foreign_retrieved):
+            self.merge_local_media_files(project, temp_new_media_list, foreign_retrieved,
+                                         foreign_retrieved_date, new_local_media_list)
+
+    def update_local_media_lists(self, most_recent_lists):
+        '''
+        for each project to do, find the most recent list of local media,
+        look for each list of retrieved local or foreign media from that
+        day and create based on those, a new list of local media actually
+        on disk, for today, without having to walk the whole directory tree
+
+        FIXME we don't take deletions into account (yet)
+        '''
+        todos = self.projects.get_todos()
+        for project in todos:
+            date = self.get_most_recent_file(project, '-local-media-sorted.gz',
+                                             most_recent_lists)
+            if  date:
+                self.update_local_media_list_for_project(project, date)
 
     def diff_lists(self, project, date, in_suffix, out_suffix, difftype='oldextra'):
         '''

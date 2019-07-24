@@ -293,18 +293,47 @@ def do_lists_generation(args, config, projects, today, most_recent_lists):
     maker.merge_media_files_to_keep()
 
     if args['verbose']:
+        print("generating list of local media not on remote project")
+    maker.list_local_media_not_on_remote()
+
+
+def do_incr_lists_generation(args, config, projects, today, most_recent_lists):
+    '''generate all the lists of media we need: media to delete,
+    media to retrieve, etc'''
+    maker = ListsMaker(config, projects, today, most_recent_lists,
+                       args['full'], args['verbose'], args['dryrun'])
+
+    if args['verbose']:
+        print("cleaning up lists of media uploaded to projects")
+    maker.cleanup_project_uploaded_media_lists()
+    if args['verbose']:
+        print("cleaning up lists of media uploaded to foreign repo")
+    maker.cleanup_project_foreignrepo_media_lists()
+
+    if args['verbose']:
+        print("producing full list of media to keep")
+    maker.merge_media_files_to_keep()
+
+    if args['verbose']:
+        print("updating lists of local media")
+    maker.update_local_media_lists(most_recent_lists)
+    if args['verbose']:
+        print("producing full lists of local media not on remote project")
+    # FIXME write this
+    # maker.update_local_media_lists_not_on_remote()
+    # ALSO need after this to do retrieves and deletes based on the new files...
+
+    # CHECK ON ALL THIS STUFF, DO I NEED IT etc
+    if args['verbose']:
         print("generating list of remote media gone since last run")
     maker.list_media_gone_from_remote(most_recent_lists)
+
     if args['verbose']:
         print("generating list of new project-uploaded media since last run")
     maker.list_new_uploaded_media_on_remote(most_recent_lists)
     if args['verbose']:
         print("generating list of new foreign-repo media since last run")
     maker.list_new_foreign_media_on_remote(most_recent_lists)
-
-    if args['verbose']:
-        print("generating list of local media not on remote project")
-    maker.list_local_media_not_on_remote()
 
 
 def do_sync(args, config, projects, today, most_recent_lists):
@@ -339,10 +368,21 @@ def do_main():
 
     if args['continue']:
         do_continue_downloads(args, config, projects, today)
-    else:
+    elif args['full']:
         do_localmedia_prep(args, config, projects, today, most_recent_lists)
         do_lists_retrieval(args, config, projects, today)
         do_lists_generation(args, config, projects, today, most_recent_lists)
+        do_sync(args, config, projects, today, most_recent_lists)
+    else:
+        # FIXME if there are no full runs for a given wiki we should not proceed
+        # but should do the full for that wiki
+
+        # hoping for new lists here
+        do_lists_retrieval(args, config, projects, today)
+        # if there are not new lists we should not proceed, FIXME
+        do_incr_lists_generation(args, config, projects, today, most_recent_lists)
+        # the above rebuilds the full delete/keep lists with today's date so
+        # they can be used for sync in the normal way
         do_sync(args, config, projects, today, most_recent_lists)
 
 
